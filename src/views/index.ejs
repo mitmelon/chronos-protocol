@@ -3,17 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chronos — Predict the Future. Verify the Outcome.</title>
-  <meta name="description" content="Autonomous AI-powered prediction markets on Arc. Stake USDC on YES or NO. The oracle resolves with verifiable evidence." />
-  <meta property="og:title" content="Chronos Protocol" />
-  <meta property="og:description" content="Decentralised prediction markets powered by an autonomous AI oracle on Arc." />
+  <title>Chronos — Prediction Markets Powered by an Autonomous Oracle</title>
+  <meta name="description" content="Chronos is a decentralised prediction market protocol on Arc. An autonomous AI oracle discovers events, creates markets, and resolves outcomes on-chain." />
 
-  <!-- Fonts -->
+  <!-- Fonts: Inter (body) + Space Grotesk (display) + JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
 
-  <!-- Built Tailwind CSS -->
   <link rel="stylesheet" href="/assets/css/build.css" />
 
   <script>
@@ -30,137 +27,112 @@
 <!-- ─── LANDING ──────────────────────────────────────────────────────────── -->
 <div id="landing">
 
-  <!-- Nav -->
+  <!-- Sticky nav -->
   <nav class="landing-nav">
     <div class="landing-nav-brand">
       <div class="chronos-logo-mark">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/>
           <polyline points="12 6 12 12 16 14"/>
-          <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
         </svg>
       </div>
       <span class="brand-name">Chronos</span>
       <span class="brand-badge"><%= networkName %></span>
     </div>
+
     <div class="landing-nav-links">
-      <a href="#features" class="nav-link-desktop">Features</a>
+      <a href="#oracle"       class="nav-link-desktop">Oracle</a>
+      <a href="#features"     class="nav-link-desktop">Features</a>
       <a href="#how-it-works" class="nav-link-desktop">How it works</a>
-      <a href="#oracle" class="nav-link-desktop">Oracle</a>
     </div>
+
     <div class="landing-nav-actions">
-      <button id="launch-app-nav" class="btn btn-primary btn-sm">Launch App</button>
+      <% if (contractAddress) { %>
+      <a href="<%= explorerUrl %>/address/<%= contractAddress %>" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Contract</a>
+      <% } %>
+      <button id="launch-app-nav" class="btn btn-primary btn-sm" style="border-radius:99px">Launch App</button>
     </div>
   </nav>
 
-  <!-- Hero -->
-  <section class="landing-hero">
-    <!-- Animated background grid -->
-    <div class="hero-bg" aria-hidden="true">
-      <svg class="hero-grid" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <radialGradient id="glow1" cx="30%" cy="40%" r="50%">
-            <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.15"/>
-            <stop offset="100%" stop-color="#4f46e5" stop-opacity="0"/>
-          </radialGradient>
-          <radialGradient id="glow2" cx="75%" cy="60%" r="45%">
-            <stop offset="0%" stop-color="#059669" stop-opacity="0.1"/>
-            <stop offset="100%" stop-color="#059669" stop-opacity="0"/>
-          </radialGradient>
-        </defs>
-        <rect width="1200" height="600" fill="url(#glow1)"/>
-        <rect width="1200" height="600" fill="url(#glow2)"/>
-        <!-- Grid lines -->
-        <g stroke="#e2e6ed" stroke-width="0.5" opacity="0.4">
-          <% for (let x = 0; x <= 1200; x += 80) { %>
-          <line x1="<%= x %>" y1="0" x2="<%= x %>" y2="600"/>
-          <% } %>
-          <% for (let y = 0; y <= 600; y += 80) { %>
-          <line x1="0" y1="<%= y %>" x2="1200" y2="<%= y %>"/>
-          <% } %>
-        </g>
-        <!-- Animated orbs -->
-        <circle class="hero-orb-1" cx="200" cy="200" r="120" fill="#4f46e5" opacity="0.05"/>
-        <circle class="hero-orb-2" cx="900" cy="350" r="180" fill="#059669" opacity="0.04"/>
-      </svg>
+  <!-- ── HERO ───────────────────────────────────────────────────────────── -->
+  <section class="landing-hero" style="position:relative;overflow:hidden">
 
-      <!-- Floating market cards preview -->
-      <div class="hero-float-cards" aria-hidden="true">
-        <div class="hero-float-card hero-float-card-1">
-          <div class="hfc-header">
-            <span class="hfc-chip hfc-chip-open">Open</span>
-            <span class="hfc-timer">23h 14m</span>
-          </div>
-          <div class="hfc-question">Will the Fed hold rates at the September meeting?</div>
-          <div class="hfc-bar">
-            <div class="hfc-bar-yes" style="width:62%"></div>
-            <div class="hfc-bar-no"></div>
-          </div>
-          <div class="hfc-labels"><span class="hfc-yes">YES 62%</span><span class="hfc-no">38% NO</span></div>
+    <!-- Subtle dot-grid background -->
+    <div class="hero-bg" aria-hidden="true">
+      <svg width="100%" height="100%" style="position:absolute;inset:0" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <pattern id="dotgrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="1" fill="#e5e7eb"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#dotgrid)" opacity="0.6"/>
+        <!-- Soft vignette so dot grid fades out from center -->
+        <radialGradient id="vignette" cx="50%" cy="50%" r="60%">
+          <stop offset="0%"   stop-color="white" stop-opacity="1"/>
+          <stop offset="100%" stop-color="white" stop-opacity="0"/>
+        </radialGradient>
+        <rect width="100%" height="100%" fill="url(#vignette)"/>
+      </svg>
+    </div>
+
+    <!-- Two gently floating market-preview cards -->
+    <div class="hero-float-wrap" aria-hidden="true">
+      <div class="hero-float-card hero-float-card-a">
+        <div class="hfc-header">
+          <span class="hfc-chip hfc-chip-open">Open</span>
+          <span class="hfc-timer">23h 14m</span>
         </div>
-        <div class="hero-float-card hero-float-card-2">
-          <div class="hfc-header">
-            <span class="hfc-chip hfc-chip-resolved">Resolved</span>
-            <span class="hfc-outcome hfc-outcome-yes">YES</span>
-          </div>
-          <div class="hfc-question">Will CPI data release on schedule this month?</div>
-          <div class="hfc-payout">+18.4 USDC</div>
+        <div class="hfc-question">Will the Fed hold rates at the next FOMC meeting?</div>
+        <div class="hfc-bar">
+          <div class="hfc-bar-yes" style="width:62%"></div>
+          <div class="hfc-bar-no"></div>
         </div>
-        <div class="hero-float-card hero-float-card-3">
-          <div class="hfc-header">
-            <span class="hfc-chip hfc-chip-open">Open</span>
-            <span class="hfc-timer">6d 4h</span>
-          </div>
-          <div class="hfc-question">Will the ECB cut rates in Q4?</div>
-          <div class="hfc-bar">
-            <div class="hfc-bar-yes" style="width:38%"></div>
-            <div class="hfc-bar-no"></div>
-          </div>
-          <div class="hfc-labels"><span class="hfc-yes">YES 38%</span><span class="hfc-no">62% NO</span></div>
+        <div class="hfc-labels"><span class="hfc-yes">YES 62%</span><span class="hfc-no">38% NO</span></div>
+      </div>
+      <div class="hero-float-card hero-float-card-b">
+        <div class="hfc-header">
+          <span class="hfc-chip hfc-chip-resolved">Resolved</span>
+          <span class="hfc-outcome hfc-outcome-yes">YES</span>
         </div>
+        <div class="hfc-question">Will CPI data release on schedule this month?</div>
+        <div class="hfc-payout">+18.40 USDC</div>
       </div>
     </div>
 
+    <!-- Hero copy -->
     <div class="hero-content">
-      <div class="landing-badge">
-        <div class="dot dot-green pulse"></div>
+
+      <div class="landing-live-badge">
+        <span class="dot dot-green pulse"></span>
         <span>Live on <%= networkName %></span>
-        <span class="badge-sep">·</span>
+        <span class="live-sep">·</span>
         <span>Chronos Oracle Active</span>
       </div>
 
       <h1 class="landing-headline">
         Predict the Future.<br/>
-        <span class="headline-accent">Verify the Outcome.</span>
+        Verify the Outcome.
       </h1>
 
       <p class="landing-subtitle">
-        An autonomous AI oracle discovers events, creates binary markets, researches outcomes, and resolves on-chain — trustlessly, around the clock. Stake USDC as low as <strong>0.10 USDC</strong>.
+        An <strong>autonomous AI oracle</strong> discovers real-world events, creates binary prediction markets, gathers multi-source evidence, and resolves outcomes on-chain — around the clock, without a human operator.
       </p>
 
       <div class="landing-ctas">
         <button id="launch-app-hero" class="btn btn-primary landing-cta-primary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
           Open Markets
-        </button>
-        <% if (contractAddress) { %>
-        <a href="<%= explorerUrl %>/address/<%= contractAddress %>" target="_blank" rel="noopener" class="btn btn-ghost landing-cta-secondary">
-          View Contract
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-            <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:2px">
+            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
           </svg>
-        </a>
-        <% } %>
+        </button>
+        <a href="#how-it-works" class="btn btn-ghost landing-cta-secondary">See how it works</a>
       </div>
 
-      <!-- Live stats bar -->
+      <!-- Stats bar -->
       <div class="landing-stats">
         <div class="landing-stat">
           <div class="landing-stat-value">YES / NO</div>
-          <div class="landing-stat-label">Binary markets</div>
+          <div class="landing-stat-label">Binary markets only</div>
         </div>
         <div class="landing-stat-divider"></div>
         <div class="landing-stat">
@@ -178,93 +150,92 @@
           <div class="landing-stat-label">Autonomous oracle</div>
         </div>
       </div>
+
     </div>
   </section>
+  <!-- END HERO -->
 
-  <!-- Oracle section -->
+
+  <!-- ── ORACLE ─────────────────────────────────────────────────────────── -->
   <section id="oracle" class="landing-section oracle-section">
     <div class="landing-section-inner">
       <div class="oracle-layout">
-        <!-- Left: diagram -->
+
+        <!-- Diagram -->
         <div class="oracle-diagram">
           <svg viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg" class="oracle-svg">
-            <defs>
-              <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.25"/>
-                <stop offset="100%" stop-color="#4f46e5" stop-opacity="0"/>
-              </radialGradient>
-              <filter id="blur4">
-                <feGaussianBlur stdDeviation="4"/>
-              </filter>
-            </defs>
-            <!-- Outer ring -->
-            <circle cx="160" cy="160" r="140" stroke="#e2e6ed" stroke-width="1" stroke-dasharray="4 6"/>
-            <!-- Middle ring -->
-            <circle cx="160" cy="160" r="100" stroke="#c7d2fe" stroke-width="1.5" stroke-dasharray="2 5" class="oracle-ring-mid"/>
-            <!-- Inner glow -->
-            <circle cx="160" cy="160" r="60" fill="url(#coreGlow)"/>
-            <!-- Core circle -->
-            <circle cx="160" cy="160" r="44" fill="#4f46e5" opacity="0.08" stroke="#4f46e5" stroke-width="1.5"/>
-            <!-- Core icon: clock -->
-            <circle cx="160" cy="160" r="20" stroke="#4f46e5" stroke-width="2"/>
-            <line x1="160" y1="148" x2="160" y2="160" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
-            <line x1="160" y1="160" x2="168" y2="164" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
-            <circle cx="160" cy="160" r="2.5" fill="#4f46e5"/>
-            <!-- Satellite nodes -->
-            <!-- Discover (top) -->
-            <circle cx="160" cy="40" r="22" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
-            <text x="160" y="36" text-anchor="middle" font-size="8" fill="#4f46e5" font-family="DM Sans" font-weight="600">DISCOVER</text>
-            <text x="160" y="46" text-anchor="middle" font-size="7" fill="#6366f1" font-family="DM Sans">Parallel</text>
-            <line x1="160" y1="62" x2="160" y2="118" stroke="#c7d2fe" stroke-width="1" stroke-dasharray="3 4" class="oracle-beam"/>
-            <!-- Reason (right) -->
-            <circle cx="280" cy="160" r="22" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
-            <text x="280" y="156" text-anchor="middle" font-size="8" fill="#059669" font-family="DM Sans" font-weight="600">REASON</text>
-            <text x="280" y="166" text-anchor="middle" font-size="7" fill="#059669" font-family="DM Sans">Chronos</text>
-            <line x1="258" y1="160" x2="204" y2="160" stroke="#bbf7d0" stroke-width="1" stroke-dasharray="3 4" class="oracle-beam"/>
-            <!-- Resolve (bottom) -->
-            <circle cx="160" cy="280" r="22" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
-            <text x="160" y="276" text-anchor="middle" font-size="8" fill="#d97706" font-family="DM Sans" font-weight="600">RESOLVE</text>
-            <text x="160" y="286" text-anchor="middle" font-size="7" fill="#d97706" font-family="DM Sans">On-Chain</text>
-            <line x1="160" y1="258" x2="160" y2="202" stroke="#fde68a" stroke-width="1" stroke-dasharray="3 4" class="oracle-beam"/>
-            <!-- Verify (left) -->
-            <circle cx="40" cy="160" r="22" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
-            <text x="40" y="156" text-anchor="middle" font-size="8" fill="#dc2626" font-family="DM Sans" font-weight="600">VERIFY</text>
-            <text x="40" y="166" text-anchor="middle" font-size="7" fill="#dc2626" font-family="DM Sans">Evidence</text>
-            <line x1="62" y1="160" x2="116" y2="160" stroke="#fecaca" stroke-width="1" stroke-dasharray="3 4" class="oracle-beam"/>
+            <!-- Outer dashed orbit -->
+            <circle cx="160" cy="160" r="138" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="5 7"/>
+            <!-- Middle spinning orbit -->
+            <circle cx="160" cy="160" r="96" stroke="#d1d5db" stroke-width="1" stroke-dasharray="3 5" class="oracle-ring-spin"/>
+            <!-- Core -->
+            <circle cx="160" cy="160" r="42" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.5"/>
+            <!-- Clock icon in core -->
+            <circle cx="160" cy="160" r="18" stroke="#111827" stroke-width="1.5"/>
+            <line x1="160" y1="149" x2="160" y2="160" stroke="#111827" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="160" y1="160" x2="167" y2="164" stroke="#111827" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="160" cy="160" r="2" fill="#111827"/>
+
+            <!-- Node: DISCOVER (top) -->
+            <circle cx="160" cy="22" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
+            <text x="160" y="18" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">DISCOVER</text>
+            <text x="160" y="27" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">Parallel</text>
+            <!-- Beam top→core -->
+            <line x1="160" y1="42" x2="160" y2="118" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
+
+            <!-- Node: REASON (right) -->
+            <circle cx="298" cy="160" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
+            <text x="298" y="156" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">REASON</text>
+            <text x="298" y="165" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">Chronos</text>
+            <line x1="278" y1="160" x2="202" y2="160" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
+
+            <!-- Node: RESOLVE (bottom) -->
+            <circle cx="160" cy="298" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
+            <text x="160" y="294" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">RESOLVE</text>
+            <text x="160" y="303" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">On-Chain</text>
+            <line x1="160" y1="278" x2="160" y2="202" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
+
+            <!-- Node: VERIFY (left) -->
+            <circle cx="22" cy="160" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
+            <text x="22" y="156" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">VERIFY</text>
+            <text x="22" y="165" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">Evidence</text>
+            <line x1="42" y1="160" x2="118" y2="160" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
           </svg>
         </div>
 
-        <!-- Right: text -->
+        <!-- Text -->
         <div class="oracle-text">
           <div class="section-eyebrow">Chronos Oracle</div>
           <h2 class="oracle-title">Fully autonomous.<br/>No human operator.</h2>
           <p class="oracle-desc">
-            Chronos is the name of the autonomous AI agent that powers this protocol. It runs on a scheduled loop — discovering newsworthy events via Parallel Search, reasoning about outcomes using large language models, and submitting cryptographically signed resolutions to the on-chain contract.
+            Chronos is the autonomous AI agent that powers this protocol. It runs on a continuous loop — discovering newsworthy events via Parallel Search, reasoning about likely outcomes, gathering verifiable evidence, and submitting cryptographically signed resolutions directly to the on-chain smart contract.
           </p>
           <div class="oracle-pills">
             <div class="oracle-pill">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-              <span>Auto-discovers 3 markets / day</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Auto-discovers up to 3 markets per day
             </div>
             <div class="oracle-pill">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              <span>Resolves with 85%+ confidence</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Resolves only when confidence exceeds 85%
             </div>
             <div class="oracle-pill">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              <span>Full refund if oracle misses deadline</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              Full refund guaranteed if deadline is missed
             </div>
             <div class="oracle-pill">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span>Results locked immutably on-chain</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Resolutions locked immutably on-chain
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </section>
 
-  <!-- Features -->
+
+  <!-- ── FEATURES ───────────────────────────────────────────────────────── -->
   <section id="features" class="landing-section landing-section-alt">
     <div class="landing-section-inner">
       <div class="section-eyebrow" style="text-align:center">Why Chronos</div>
@@ -273,117 +244,122 @@
 
         <div class="glass-card feature-card">
           <div class="feature-icon feature-icon-accent">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
             </svg>
           </div>
           <h3 class="feature-title">Autonomous Oracle</h3>
-          <p class="feature-desc">Chronos discovers events, generates precise YES/NO questions, gathers multi-source evidence, and submits resolutions with confidence scores — no human operator needed.</p>
+          <p class="feature-desc">Chronos discovers events, generates precise YES/NO questions, gathers multi-source evidence, and submits resolutions — no human needed.</p>
         </div>
 
         <div class="glass-card feature-card">
           <div class="feature-icon feature-icon-success">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
             </svg>
           </div>
           <h3 class="feature-title">Fair Fees</h3>
-          <p class="feature-desc">The <%= feePct %>% protocol fee applies only to winners' profit, never to the original stake or losing positions.</p>
+          <p class="feature-desc">The <%= feePct %>% protocol fee applies only to winners' profit. Original stakes and losing positions are never charged a fee.</p>
         </div>
 
         <div class="glass-card feature-card">
           <div class="feature-icon feature-icon-accent">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 11 12 14 22 4"/>
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
             </svg>
           </div>
           <h3 class="feature-title">Refund Guarantee</h3>
-          <p class="feature-desc">If the oracle misses its resolution deadline, anyone can trigger a full refund. Everyone gets their exact USDC back.</p>
+          <p class="feature-desc">If the oracle misses its resolution deadline, anyone can trigger a full refund. Everyone gets their exact USDC back, no questions asked.</p>
         </div>
 
         <div class="glass-card feature-card">
           <div class="feature-icon feature-icon-accent">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-              <line x1="8" y1="21" x2="16" y2="21"/>
-              <line x1="12" y1="17" x2="12" y2="21"/>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
             </svg>
           </div>
           <h3 class="feature-title">USDC on Arc</h3>
-          <p class="feature-desc">Arc uses USDC as native gas. No ETH needed — every bet, fee, and payout is stable USDC with sub-second finality.</p>
+          <p class="feature-desc">Arc uses USDC as native gas. No ETH needed — every bet, fee, and payout is denominated in stable USDC with sub-second finality.</p>
         </div>
 
       </div>
     </div>
   </section>
 
-  <!-- How it works -->
+
+  <!-- ── HOW IT WORKS ───────────────────────────────────────────────────── -->
   <section id="how-it-works" class="landing-section">
-    <div class="landing-section-inner" style="text-align:center;max-width:760px">
-      <div class="section-eyebrow">Process</div>
-      <h2 class="landing-section-title">How it works</h2>
-      <p style="font-size:14px;color:var(--muted);margin-bottom:48px">Four steps from event to payout.</p>
+    <div class="landing-section-inner" style="max-width:680px">
+      <div class="section-eyebrow" style="text-align:center">Process</div>
+      <h2 class="landing-section-title">From event to payout in four steps.</h2>
 
       <div class="how-steps">
         <div class="how-step-line"></div>
 
         <div class="how-step">
           <div class="how-step-num">1</div>
-          <div class="how-step-body">
+          <div>
             <div class="how-step-title">Discover</div>
-            <p class="how-step-desc">Chronos uses Parallel Search to find timely, verifiable future events and turns them into precise YES/NO market questions — up to 3 per day.</p>
+            <p class="how-step-desc">Chronos uses Parallel Search to find timely, verifiable future events and turns them into precise binary market questions — up to 3 per day.</p>
           </div>
         </div>
 
         <div class="how-step">
           <div class="how-step-num">2</div>
-          <div class="how-step-body">
+          <div>
             <div class="how-step-title">Trade</div>
-            <p class="how-step-desc">Connect your wallet, deposit as little as 0.10 USDC, and choose YES or NO before the trading deadline. All funds are locked in the smart contract.</p>
+            <p class="how-step-desc">Connect your wallet, stake as little as 0.10 USDC on YES or NO before the trading deadline. Funds are locked in the smart contract.</p>
           </div>
         </div>
 
         <div class="how-step">
           <div class="how-step-num">3</div>
-          <div class="how-step-body">
+          <div>
             <div class="how-step-title">Resolve</div>
-            <p class="how-step-desc">After the deadline, Chronos gathers multi-source evidence and reasons about the outcome. On-chain resolution fires when confidence exceeds 85%.</p>
+            <p class="how-step-desc">After the deadline Chronos gathers multi-source evidence and reasons about the outcome. On-chain resolution fires when confidence exceeds 85%.</p>
           </div>
         </div>
 
         <div class="how-step">
           <div class="how-step-num">4</div>
-          <div class="how-step-body">
+          <div>
             <div class="how-step-title">Claim</div>
-            <p class="how-step-desc">Winners claim their pro-rata share minus the <%= feePct %>% fee on profit. If the oracle fails to resolve, anyone can mark the market refundable.</p>
+            <p class="how-step-desc">Winners claim their pro-rata share minus the <%= feePct %>% fee on profit. If Chronos fails to resolve, anyone can trigger a full refund.</p>
           </div>
         </div>
       </div>
 
-      <button id="launch-app-bottom" class="btn btn-primary" style="margin-top:36px;padding:14px 40px;font-size:15px;font-weight:600">Start Predicting</button>
+      <div style="text-align:center;margin-top:32px">
+        <button id="launch-app-bottom" class="btn btn-primary" style="border-radius:99px;padding:13px 40px;font-size:14.5px">
+          Start Predicting
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:2px">
+            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </section>
+
 
   <!-- Footer -->
   <footer class="landing-footer">
     <div class="landing-footer-brand">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
       </svg>
-      <span>Chronos Protocol</span>
+      Chronos Protocol
     </div>
-    <div class="landing-footer-meta">
-      <%= networkName %> &middot; Contract:
+    <div style="color:var(--subtle)">
+      <%= networkName %>
       <% if (contractAddress) { %>
+        &nbsp;·&nbsp; Contract:
         <a href="<%= explorerUrl %>/address/<%= contractAddress %>" target="_blank" class="footer-contract-link">
           <%= contractAddress.slice(0,6) %>…<%= contractAddress.slice(-4) %>
         </a>
-      <% } else { %>
-        <span style="color:var(--subtle)">Not deployed</span>
       <% } %>
     </div>
-    <div class="landing-footer-note">Testnet only — no real funds</div>
+    <div style="color:var(--subtle)">Testnet only — no real funds</div>
   </footer>
 
 </div>
@@ -397,14 +373,13 @@
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
   <div class="app-shell">
-    <!-- Sidebar -->
+
+    <!-- ── Sidebar ── -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-logo">
         <div class="sidebar-logo-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-            <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
         </div>
         <div>
@@ -416,31 +391,31 @@
       <nav class="sidebar-nav">
         <div class="nav-section-label">Protocol</div>
         <button class="nav-item active" data-page="overview">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           Overview
         </button>
         <button class="nav-item" data-page="markets">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
           Explore Markets
         </button>
         <button class="nav-item" data-page="positions">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           My Positions
         </button>
         <button class="nav-item" data-page="resolutions">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           Resolutions
         </button>
 
-        <div class="nav-section-label" style="margin-top:12px">Intelligence</div>
+        <div class="nav-section-label" style="margin-top:10px">Intelligence</div>
         <button class="nav-item" data-page="agent">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
           Chronos Oracle
         </button>
 
-        <div class="nav-section-label" style="margin-top:12px">System</div>
+        <div class="nav-section-label" style="margin-top:10px">System</div>
         <button class="nav-item" data-page="settings">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           Settings
         </button>
       </nav>
@@ -448,17 +423,16 @@
       <div class="sidebar-footer">
         <div class="sidebar-footer-inner">
           <span class="dot dot-green pulse"></span>
-          <span><%= networkName %> · Chronos v1</span>
+          <span><%= networkName %> · v1</span>
         </div>
       </div>
     </aside>
 
-    <!-- Main -->
+    <!-- ── Main content ── -->
     <div class="main-content">
       <header class="topbar">
-        <!-- Hamburger — always in DOM, visibility controlled by CSS media query -->
         <button id="sidebar-toggle" class="hamburger-btn" aria-label="Open menu">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="6" x2="21" y2="6"/>
             <line x1="3" y1="12" x2="21" y2="12"/>
             <line x1="3" y1="18" x2="21" y2="18"/>
@@ -470,7 +444,7 @@
         </div>
         <div class="topbar-right">
           <div id="usdc-balance-display" class="topbar-balance" style="display:none">
-            <span id="usdc-balance-value">—</span> USDC
+            <span id="usdc-balance-value">—</span>&nbsp;USDC
           </div>
           <div id="wallet-btn-container"></div>
         </div>
@@ -478,14 +452,15 @@
 
       <main class="page-content" id="page-root">
         <div class="empty-state">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
           <h3>Loading Chronos…</h3>
-          <p>Connecting to Arc Testnet</p>
+          <p>Connecting to <%= networkName %></p>
         </div>
       </main>
     </div>
+
   </div>
 
   <div id="market-modal" class="modal-overlay" style="display:none">
@@ -497,45 +472,32 @@
 
 
 <script>
-  // ── Landing → App transition (no page reload) ──────────────────────────────
+  // ── Landing → App ──────────────────────────────────────────────────────────
   function launchApp() {
     document.getElementById('landing').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.body.style.overflow = '';
   }
-  ['launch-app-nav','launch-app-hero','launch-app-bottom'].forEach(id => {
-    const el = document.getElementById(id);
+  ['launch-app-nav','launch-app-hero','launch-app-bottom'].forEach(function(id){
+    var el = document.getElementById(id);
     if (el) el.addEventListener('click', launchApp);
   });
-  // Skip landing if returning via hash
   if (window.location.hash && window.location.hash.length > 1) launchApp();
 
-  // ── Sidebar — mobile open/close ────────────────────────────────────────────
-  // NOTE: app.js re-attaches these after module load; this block handles the
-  // initial state before the module is ready so the toggle works immediately.
-  var _sidebarEl  = document.getElementById('sidebar');
-  var _backdropEl = document.getElementById('sidebar-backdrop');
-  var _toggleBtn  = document.getElementById('sidebar-toggle');
+  // ── Sidebar mobile open / close ────────────────────────────────────────────
+  var _sb  = document.getElementById('sidebar');
+  var _bd  = document.getElementById('sidebar-backdrop');
+  var _tog = document.getElementById('sidebar-toggle');
 
-  function openSidebar()  {
-    _sidebarEl.classList.add('open');
-    _backdropEl.classList.add('visible');
-    document.body.style.overflow = 'hidden';
-  }
-  function closeSidebar() {
-    _sidebarEl.classList.remove('open');
-    _backdropEl.classList.remove('visible');
-    document.body.style.overflow = '';
-  }
+  function openSidebar()  { _sb.classList.add('open'); _bd.classList.add('visible'); document.body.style.overflow='hidden'; }
+  function closeSidebar() { _sb.classList.remove('open'); _bd.classList.remove('visible'); document.body.style.overflow=''; }
   window._openSidebar  = openSidebar;
   window._closeSidebar = closeSidebar;
 
-  if (_toggleBtn)  _toggleBtn.addEventListener('click', openSidebar);
-  if (_backdropEl) _backdropEl.addEventListener('click', closeSidebar);
+  if (_tog) _tog.addEventListener('click', openSidebar);
+  if (_bd)  _bd.addEventListener('click',  closeSidebar);
 </script>
 
-<!-- App bundle — loads after landing renders immediately -->
 <script type="module" src="/assets/js/app.js"></script>
-
 </body>
 </html>
