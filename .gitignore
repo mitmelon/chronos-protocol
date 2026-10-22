@@ -1,0 +1,39 @@
+# ─── Secrets & environment ───────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.circle/
+
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp/
+.pnp.js
+
+# ─── Build output ────────────────────────────────────────────────────────────
+public/css/build.css
+dist/
+build/
+
+# ─── Foundry / Solidity ───────────────────────────────────────────────────────
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+cache/
+
+# ─── OS / editor ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Forge deps (installed via forge install, not committed) ─────────────────
+lib/
