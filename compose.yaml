@@ -1,0 +1,29 @@
+services:
+  mongo:
+    image: mongo:7-jammy
+    restart: unless-stopped
+    ports: ["27017:27017"]
+    volumes: ["mongodata:/data/db"]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    volumes: ["redisdata:/data"]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  mongodata:
+  redisdata:
