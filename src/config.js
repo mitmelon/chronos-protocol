@@ -19,7 +19,7 @@ function buildRpcUrl(compassChain) {
 }
 
 module.exports = {
-  port: parseInt(optional('PORT', '3000'), 10),
+  port: parseInt(optional('PORT', '5173'), 10),
   corsOrigins: optional('CORS_ORIGINS', 'http://localhost:8080').split(',').map(s => s.trim()),
 
   mongodb: {
