@@ -39,15 +39,13 @@ function navigate(page, params = {}) {
 
 window.chronosRouter = navigate;
 
-document.querySelectorAll('.nav-item[data-page]').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.page)));
-
-const sidebarToggle = document.getElementById('sidebar-toggle');
-const sidebar = document.getElementById('sidebar');
-if (sidebarToggle) {
-  sidebarToggle.style.display = 'flex';
-  sidebarToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
-  document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => sidebar.classList.remove('open')));
-}
+// Wire nav item click → navigate + close sidebar on mobile
+document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    navigate(btn.dataset.page);
+    if (window.innerWidth <= 768 && window._closeSidebar) window._closeSidebar();
+  });
+});
 
 function parseHash() {
   const hash = window.location.hash.slice(1);

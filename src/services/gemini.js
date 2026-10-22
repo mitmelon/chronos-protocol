@@ -4,8 +4,30 @@ const config = require('../config');
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
+/**
+ * Retry a fetch-based async call with exponential backoff + jitter.
+ * Retries on: 429 (rate limit), 503 (overloaded), 502 (gateway), 408 (timeout).
+ */
+async function withRetry(fn, { maxAttempts = 5, baseDelayMs = 2000, maxDelayMs = 60000, label = 'call' } = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRetryable = err._retryable === true;
+      if (!isRetryable || attempt === maxAttempts) throw err;
+      // Exponential backoff with ±20% jitter
+      const raw   = baseDelayMs * Math.pow(2, attempt - 1);
+      const jitter = raw * 0.2 * (Math.random() * 2 - 1);
+      const delay  = Math.min(Math.round(raw + jitter), maxDelayMs);
+      console.warn(`[gemini] ${label} attempt ${attempt}/${maxAttempts} failed (${err.message}). Retrying in ${Math.round(delay / 1000)}s…`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
 async function generateContent(prompt, systemInstruction) {
   if (!config.gemini.apiKey) throw new Error('GEMINI_API_KEY not configured');
+
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
@@ -13,12 +35,25 @@ async function generateContent(prompt, systemInstruction) {
   if (systemInstruction) body.system_instruction = { parts: [{ text: systemInstruction }] };
 
   const url = `${GEMINI_API_BASE}/${config.gemini.model}:generateContent?key=${config.gemini.apiKey}`;
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) { const text = await res.text(); throw new Error(`Gemini API error ${res.status}: ${text}`); }
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Gemini returned empty response');
-  return { text, tokensUsed: data?.usageMetadata?.totalTokenCount || 0 };
+
+  return withRetry(async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      const err = new Error(`Gemini API error ${res.status}: ${text}`);
+      // Mark retryable status codes
+      err._retryable = [429, 500, 502, 503, 504, 408].includes(res.status);
+      throw err;
+    }
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('Gemini returned empty response');
+    return { text, tokensUsed: data?.usageMetadata?.totalTokenCount || 0 };
+  }, { maxAttempts: 5, baseDelayMs: 3000, maxDelayMs: 90000, label: 'generateContent' });
 }
 
 async function generateMarketQuestion(eventData) {
