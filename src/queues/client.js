@@ -26,8 +26,8 @@ const defaultJobOptions = {
   backoff: { type: 'exponential', delay: 15_000 },
 };
 
-const discoveryQueue  = new Queue('chronos:discovery',  { connection: CONNECTION, defaultJobOptions });
-const resolutionQueue = new Queue('chronos:resolution', { connection: CONNECTION, defaultJobOptions });
-const keeperQueue     = new Queue('chronos:keeper',     { connection: CONNECTION, defaultJobOptions });
+const discoveryQueue  = new Queue('chronos-discovery',  { connection: CONNECTION, defaultJobOptions });
+const resolutionQueue = new Queue('chronos-resolution', { connection: CONNECTION, defaultJobOptions });
+const keeperQueue     = new Queue('chronos-keeper',     { connection: CONNECTION, defaultJobOptions });
 
 module.exports = { discoveryQueue, resolutionQueue, keeperQueue, CONNECTION };

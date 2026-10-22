@@ -9,21 +9,29 @@ async function searchEvents(query, options = {}) {
     console.warn('[parallel] PARALLEL_API_KEY not configured — returning empty results');
     return [];
   }
-  const { numResults = 10, category = 'news' } = options;
+  // Parallel AI API v1 uses search_queries array only — no num_results param
   const res = await fetch(`${PARALLEL_API_BASE}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.parallel.apiKey}` },
-    body: JSON.stringify({ query, num_results: numResults, category }),
+    body: JSON.stringify({ search_queries: [query] }),
   });
   if (!res.ok) { const text = await res.text(); throw new Error(`Parallel Search API error ${res.status}: ${text}`); }
   const data = await res.json();
-  return (data.results || []).map(r => ({
+  // Response may be { results: [...] } or { results: { [query]: [...] } }
+  let rawResults = [];
+  if (Array.isArray(data.results)) {
+    rawResults = data.results;
+  } else if (data.results && typeof data.results === 'object') {
+    // Map keyed by query string
+    rawResults = Object.values(data.results).flat();
+  }
+  return rawResults.map(r => ({
     title: r.title || '',
-    url: r.url || '',
-    snippet: r.snippet || r.description || '',
-    publishedAt: r.published_at || r.date || null,
-    source: r.source || new URL(r.url || 'http://example.com').hostname,
-    score: r.score || 0,
+    url: r.url || r.link || '',
+    snippet: r.snippet || r.description || r.summary || '',
+    publishedAt: r.published_at || r.date || r.publishedAt || null,
+    source: r.source || (() => { try { return new URL(r.url || r.link || 'http://example.com').hostname; } catch { return 'unknown'; } })(),
+    score: r.score || r.relevance_score || 0,
   }));
 }
 

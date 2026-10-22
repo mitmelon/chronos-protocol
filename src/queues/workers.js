@@ -22,7 +22,7 @@ let _workers = [];
 
 async function startWorkers() {
   const discoveryWorker = new Worker(
-    'chronos:discovery',
+    'chronos-discovery',
     async (job) => {
       console.log(`[worker:discovery] Starting job ${job.id}`);
       const result = await runDiscovery();
@@ -38,7 +38,7 @@ async function startWorkers() {
   );
 
   const resolutionWorker = new Worker(
-    'chronos:resolution',
+    'chronos-resolution',
     async (job) => {
       console.log(`[worker:resolution] Starting job ${job.id}`);
       const result = await runResolution();
@@ -53,7 +53,7 @@ async function startWorkers() {
   );
 
   const keeperWorker = new Worker(
-    'chronos:keeper',
+    'chronos-keeper',
     async (job) => {
       console.log(`[worker:keeper] Starting job ${job.id}`);
       const result = await runKeeper();

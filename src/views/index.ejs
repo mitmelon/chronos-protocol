@@ -239,6 +239,7 @@
 <div id="app" style="display:none">
 
   <div id="toast-container"></div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
   <div class="app-shell">
     <!-- Sidebar -->
@@ -346,6 +347,19 @@
 
   // Returning users / shared links skip the landing entirely
   if (window.location.hash && window.location.hash.length > 1) launchApp();
+
+  // Mobile sidebar toggle
+  const sidebarEl   = document.getElementById('sidebar');
+  const backdropEl  = document.getElementById('sidebar-backdrop');
+  const toggleBtn   = document.getElementById('sidebar-toggle');
+  function openSidebar()  { sidebarEl.classList.add('open'); backdropEl.classList.add('visible'); document.body.style.overflow = 'hidden'; }
+  function closeSidebar() { sidebarEl.classList.remove('open'); backdropEl.classList.remove('visible'); document.body.style.overflow = ''; }
+  if (toggleBtn)  toggleBtn.addEventListener('click', openSidebar);
+  if (backdropEl) backdropEl.addEventListener('click', closeSidebar);
+  // Close sidebar when a nav item is clicked on mobile
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
+  });
 </script>
 
 <!-- App bundle loads after landing so the hero renders immediately -->

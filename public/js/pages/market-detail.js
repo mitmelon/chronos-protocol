@@ -117,8 +117,8 @@ function renderTradePanel(m) {
         <button class="btn btn-yes" style="flex:1" id="select-yes">YES</button>
         <button class="btn btn-no" style="flex:1" id="select-no">NO</button>
       </div>
-      <input class="input input-amount" type="number" id="trade-amount" placeholder="0.00" min="0" step="1" />
-      <div style="font-size:11px;color:var(--muted);margin:6px 0 14px">USDC — minimum 1.00</div>
+      <input class="input input-amount" type="number" id="trade-amount" placeholder="0.10" min="0.1" step="0.1" />
+      <div style="font-size:11px;color:var(--muted);margin:6px 0 14px">USDC — minimum 0.10</div>
       <div id="trade-preview" style="margin-bottom:14px"></div>
       <button class="btn btn-primary btn-full" id="trade-submit" disabled>
         Connect Wallet to Trade
@@ -199,7 +199,7 @@ function wireTrade(container, m) {
     if (!wallet.connected) { submitBtn.textContent = 'Connect Wallet'; submitBtn.disabled = true; return; }
     if (!wallet.onRightChain) { submitBtn.textContent = 'Switch to Arc Testnet'; submitBtn.disabled = false; return; }
     if (!selectedOutcome) { submitBtn.textContent = 'Select YES or NO'; submitBtn.disabled = true; return; }
-    if (!amount || amount < 1) { submitBtn.textContent = 'Enter amount (min 1 USDC)'; submitBtn.disabled = true; return; }
+    if (!amount || amount < 0.1) { submitBtn.textContent = 'Enter amount (min 0.10 USDC)'; submitBtn.disabled = true; return; }
     submitBtn.textContent = `Place ${selectedOutcome === 1 ? 'YES' : 'NO'} · ${amount} USDC`;
     submitBtn.disabled = false;
   }
@@ -210,7 +210,7 @@ function wireTrade(container, m) {
       if (!wallet.onRightChain) { wallet.switchToArc(); return; }
       if (!selectedOutcome) return;
       const amount = parseFloat(amountEl.value || '0');
-      if (amount < 1) return;
+      if (amount < 0.1) return;
 
       const amountMicro = BigInt(Math.floor(amount * 1e6));
       submitBtn.disabled = true;
