@@ -3,500 +3,209 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chronos — Prediction Markets Powered by an Autonomous Oracle</title>
-  <meta name="description" content="Chronos is a decentralised prediction market protocol on Arc. An autonomous AI oracle discovers events, creates markets, and resolves outcomes on-chain." />
+  <title>Chronos: prediction markets resolved by an autonomous oracle</title>
+  <meta name="description" content="Chronos is a prediction market protocol on Arc. An autonomous AI oracle finds events, opens markets and resolves outcomes on-chain in USDC." />
 
-  <!-- Fonts: Inter (body) + Space Grotesk (display) + JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
-
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
   <link rel="stylesheet" href="/assets/css/build.css" />
 
   <script>
-    window.CHRONOS_API_URL  = '<%= apiUrl %>';
-    window.CHRONOS_CONTRACT = '<%= contractAddress %>';
-    window.CHRONOS_USDC     = '<%= usdcAddress %>';
-    window.CHRONOS_CHAIN_ID = <%= chainId %>;
-    window.CHRONOS_EXPLORER = '<%= explorerUrl %>';
-    window.CHRONOS_NETWORK  = '<%= networkName %>';
+    window.CHRONOS_API_URL   = '<%= apiUrl %>';
+    window.CHRONOS_CONTRACT  = '<%= contractAddress %>';
+    window.CHRONOS_USDC      = '<%= usdcAddress %>';
+    window.CHRONOS_CHAIN_ID  = <%= chainId %>;
+    window.CHRONOS_EXPLORER  = '<%= explorerUrl %>';
+    window.CHRONOS_NETWORK   = '<%= networkName %>';
+    window.CHRONOS_FEE_PCT   = <%= feePct %>;
   </script>
 </head>
 <body>
 
-<!-- ─── LANDING ──────────────────────────────────────────────────────────── -->
+<!-- ═══ Landing ═══════════════════════════════════════════════════════════ -->
 <div id="landing">
-
-  <!-- Sticky nav -->
-  <nav class="landing-nav">
-    <div class="landing-nav-brand">
-      <div class="chronos-logo-mark">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
-        </svg>
-      </div>
-      <span class="brand-name">Chronos</span>
-      <span class="brand-badge"><%= networkName %></span>
-    </div>
-
-    <div class="landing-nav-links">
-      <a href="#oracle"       class="nav-link-desktop">Oracle</a>
-      <a href="#features"     class="nav-link-desktop">Features</a>
-      <a href="#how-it-works" class="nav-link-desktop">How it works</a>
-    </div>
-
-    <div class="landing-nav-actions">
-      <% if (contractAddress) { %>
-      <a href="<%= explorerUrl %>/address/<%= contractAddress %>" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Contract</a>
-      <% } %>
-      <button id="launch-app-nav" class="btn btn-primary btn-sm" style="border-radius:99px">Launch App</button>
-    </div>
-  </nav>
-
-  <!-- ── HERO ───────────────────────────────────────────────────────────── -->
-  <section class="landing-hero" style="position:relative;overflow:hidden">
-
-    <!-- Subtle dot-grid background -->
-    <div class="hero-bg" aria-hidden="true">
-      <svg width="100%" height="100%" style="position:absolute;inset:0" preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <pattern id="dotgrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="1" fill="#e5e7eb"/>
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#dotgrid)" opacity="0.6"/>
-        <!-- Soft vignette so dot grid fades out from center -->
-        <radialGradient id="vignette" cx="50%" cy="50%" r="60%">
-          <stop offset="0%"   stop-color="white" stop-opacity="1"/>
-          <stop offset="100%" stop-color="white" stop-opacity="0"/>
-        </radialGradient>
-        <rect width="100%" height="100%" fill="url(#vignette)"/>
-      </svg>
-    </div>
-
-    <!-- Two gently floating market-preview cards -->
-    <div class="hero-float-wrap" aria-hidden="true">
-      <div class="hero-float-card hero-float-card-a">
-        <div class="hfc-header">
-          <span class="hfc-chip hfc-chip-open">Open</span>
-          <span class="hfc-timer">23h 14m</span>
-        </div>
-        <div class="hfc-question">Will the Fed hold rates at the next FOMC meeting?</div>
-        <div class="hfc-bar">
-          <div class="hfc-bar-yes" style="width:62%"></div>
-          <div class="hfc-bar-no"></div>
-        </div>
-        <div class="hfc-labels"><span class="hfc-yes">YES 62%</span><span class="hfc-no">38% NO</span></div>
-      </div>
-      <div class="hero-float-card hero-float-card-b">
-        <div class="hfc-header">
-          <span class="hfc-chip hfc-chip-resolved">Resolved</span>
-          <span class="hfc-outcome hfc-outcome-yes">YES</span>
-        </div>
-        <div class="hfc-question">Will CPI data release on schedule this month?</div>
-        <div class="hfc-payout">+18.40 USDC</div>
+  <header class="lp-nav">
+    <div class="lp-nav-in">
+      <a class="lp-brand" href="#" aria-label="Chronos home">
+        <span class="logo-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+        <span class="brand-name">Chronos</span>
+      </a>
+      <nav class="lp-links" aria-label="Sections">
+        <a href="#how-it-works">How it works</a>
+        <a href="#oracle">Oracle</a>
+        <a href="#fees">Fees and refunds</a>
+      </nav>
+      <div class="lp-actions">
+        <% if (contractAddress) { %><a class="btn btn-quiet" href="<%= explorerUrl %>/address/<%= contractAddress %>" target="_blank" rel="noopener">Contract</a><% } %>
+        <button class="btn btn-primary" data-launch>Launch app</button>
       </div>
     </div>
+  </header>
 
-    <!-- Hero copy -->
-    <div class="hero-content">
-
-      <div class="landing-live-badge">
-        <span class="dot dot-green pulse"></span>
-        <span>Live on <%= networkName %></span>
-        <span class="live-sep">·</span>
-        <span>Chronos Oracle Active</span>
-      </div>
-
-      <h1 class="landing-headline">
-        Predict the Future.<br/>
-        Verify the Outcome.
-      </h1>
-
-      <p class="landing-subtitle">
-        An <strong>autonomous AI oracle</strong> discovers real-world events, creates binary prediction markets, gathers multi-source evidence, and resolves outcomes on-chain — around the clock, without a human operator.
-      </p>
-
-      <div class="landing-ctas">
-        <button id="launch-app-hero" class="btn btn-primary landing-cta-primary">
-          Open Markets
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:2px">
-            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-          </svg>
-        </button>
-        <a href="#how-it-works" class="btn btn-ghost landing-cta-secondary">See how it works</a>
-      </div>
-
-      <!-- Stats bar -->
-      <div class="landing-stats">
-        <div class="landing-stat">
-          <div class="landing-stat-value">YES / NO</div>
-          <div class="landing-stat-label">Binary markets only</div>
-        </div>
-        <div class="landing-stat-divider"></div>
-        <div class="landing-stat">
-          <div class="landing-stat-value"><%= feePct %>%</div>
-          <div class="landing-stat-label">Fee on profit only</div>
-        </div>
-        <div class="landing-stat-divider"></div>
-        <div class="landing-stat">
-          <div class="landing-stat-value">0.10</div>
-          <div class="landing-stat-label">Min USDC stake</div>
-        </div>
-        <div class="landing-stat-divider"></div>
-        <div class="landing-stat">
-          <div class="landing-stat-value">Chronos</div>
-          <div class="landing-stat-label">Autonomous oracle</div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-  <!-- END HERO -->
-
-
-  <!-- ── ORACLE ─────────────────────────────────────────────────────────── -->
-  <section id="oracle" class="landing-section oracle-section">
-    <div class="landing-section-inner">
-      <div class="oracle-layout">
-
-        <!-- Diagram -->
-        <div class="oracle-diagram">
-          <svg viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg" class="oracle-svg">
-            <!-- Outer dashed orbit -->
-            <circle cx="160" cy="160" r="138" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="5 7"/>
-            <!-- Middle spinning orbit -->
-            <circle cx="160" cy="160" r="96" stroke="#d1d5db" stroke-width="1" stroke-dasharray="3 5" class="oracle-ring-spin"/>
-            <!-- Core -->
-            <circle cx="160" cy="160" r="42" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.5"/>
-            <!-- Clock icon in core -->
-            <circle cx="160" cy="160" r="18" stroke="#111827" stroke-width="1.5"/>
-            <line x1="160" y1="149" x2="160" y2="160" stroke="#111827" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="160" y1="160" x2="167" y2="164" stroke="#111827" stroke-width="1.5" stroke-linecap="round"/>
-            <circle cx="160" cy="160" r="2" fill="#111827"/>
-
-            <!-- Node: DISCOVER (top) -->
-            <circle cx="160" cy="22" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
-            <text x="160" y="18" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">DISCOVER</text>
-            <text x="160" y="27" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">Parallel</text>
-            <!-- Beam top→core -->
-            <line x1="160" y1="42" x2="160" y2="118" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
-
-            <!-- Node: REASON (right) -->
-            <circle cx="298" cy="160" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
-            <text x="298" y="156" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">REASON</text>
-            <text x="298" y="165" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">Chronos</text>
-            <line x1="278" y1="160" x2="202" y2="160" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
-
-            <!-- Node: RESOLVE (bottom) -->
-            <circle cx="160" cy="298" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
-            <text x="160" y="294" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">RESOLVE</text>
-            <text x="160" y="303" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">On-Chain</text>
-            <line x1="160" y1="278" x2="160" y2="202" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
-
-            <!-- Node: VERIFY (left) -->
-            <circle cx="22" cy="160" r="20" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5"/>
-            <text x="22" y="156" text-anchor="middle" font-size="7.5" fill="#111827" font-family="Inter" font-weight="700">VERIFY</text>
-            <text x="22" y="165" text-anchor="middle" font-size="6.5"  fill="#6b7280" font-family="Inter">Evidence</text>
-            <line x1="42" y1="160" x2="118" y2="160" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4 5" class="oracle-beam"/>
-          </svg>
-        </div>
-
-        <!-- Text -->
-        <div class="oracle-text">
-          <div class="section-eyebrow">Chronos Oracle</div>
-          <h2 class="oracle-title">Fully autonomous.<br/>No human operator.</h2>
-          <p class="oracle-desc">
-            Chronos is the autonomous AI agent that powers this protocol. It runs on a continuous loop — discovering newsworthy events via Parallel Search, reasoning about likely outcomes, gathering verifiable evidence, and submitting cryptographically signed resolutions directly to the on-chain smart contract.
-          </p>
-          <div class="oracle-pills">
-            <div class="oracle-pill">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              Auto-discovers up to 3 markets per day
-            </div>
-            <div class="oracle-pill">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              Resolves only when confidence exceeds 85%
-            </div>
-            <div class="oracle-pill">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              Full refund guaranteed if deadline is missed
-            </div>
-            <div class="oracle-pill">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              Resolutions locked immutably on-chain
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-
-  <!-- ── FEATURES ───────────────────────────────────────────────────────── -->
-  <section id="features" class="landing-section landing-section-alt">
-    <div class="landing-section-inner">
-      <div class="section-eyebrow" style="text-align:center">Why Chronos</div>
-      <h2 class="landing-section-title">Built different.</h2>
-      <div class="feature-grid">
-
-        <div class="glass-card feature-card">
-          <div class="feature-icon feature-icon-accent">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-            </svg>
-          </div>
-          <h3 class="feature-title">Autonomous Oracle</h3>
-          <p class="feature-desc">Chronos discovers events, generates precise YES/NO questions, gathers multi-source evidence, and submits resolutions — no human needed.</p>
-        </div>
-
-        <div class="glass-card feature-card">
-          <div class="feature-icon feature-icon-success">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-            </svg>
-          </div>
-          <h3 class="feature-title">Fair Fees</h3>
-          <p class="feature-desc">The <%= feePct %>% protocol fee applies only to winners' profit. Original stakes and losing positions are never charged a fee.</p>
-        </div>
-
-        <div class="glass-card feature-card">
-          <div class="feature-icon feature-icon-accent">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 11 12 14 22 4"/>
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-            </svg>
-          </div>
-          <h3 class="feature-title">Refund Guarantee</h3>
-          <p class="feature-desc">If the oracle misses its resolution deadline, anyone can trigger a full refund. Everyone gets their exact USDC back, no questions asked.</p>
-        </div>
-
-        <div class="glass-card feature-card">
-          <div class="feature-icon feature-icon-accent">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-            </svg>
-          </div>
-          <h3 class="feature-title">USDC on Arc</h3>
-          <p class="feature-desc">Arc uses USDC as native gas. No ETH needed — every bet, fee, and payout is denominated in stable USDC with sub-second finality.</p>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-
-  <!-- ── HOW IT WORKS ───────────────────────────────────────────────────── -->
-  <section id="how-it-works" class="landing-section">
-    <div class="landing-section-inner" style="max-width:680px">
-      <div class="section-eyebrow" style="text-align:center">Process</div>
-      <h2 class="landing-section-title">From event to payout in four steps.</h2>
-
-      <div class="how-steps">
-        <div class="how-step-line"></div>
-
-        <div class="how-step">
-          <div class="how-step-num">1</div>
-          <div>
-            <div class="how-step-title">Discover</div>
-            <p class="how-step-desc">Chronos uses Parallel Search to find timely, verifiable future events and turns them into precise binary market questions — up to 3 per day.</p>
-          </div>
-        </div>
-
-        <div class="how-step">
-          <div class="how-step-num">2</div>
-          <div>
-            <div class="how-step-title">Trade</div>
-            <p class="how-step-desc">Connect your wallet, stake as little as 0.10 USDC on YES or NO before the trading deadline. Funds are locked in the smart contract.</p>
-          </div>
-        </div>
-
-        <div class="how-step">
-          <div class="how-step-num">3</div>
-          <div>
-            <div class="how-step-title">Resolve</div>
-            <p class="how-step-desc">After the deadline Chronos gathers multi-source evidence and reasons about the outcome. On-chain resolution fires when confidence exceeds 85%.</p>
-          </div>
-        </div>
-
-        <div class="how-step">
-          <div class="how-step-num">4</div>
-          <div>
-            <div class="how-step-title">Claim</div>
-            <p class="how-step-desc">Winners claim their pro-rata share minus the <%= feePct %>% fee on profit. If Chronos fails to resolve, anyone can trigger a full refund.</p>
-          </div>
-        </div>
-      </div>
-
-      <div style="text-align:center;margin-top:32px">
-        <button id="launch-app-bottom" class="btn btn-primary" style="border-radius:99px;padding:13px 40px;font-size:14.5px">
-          Start Predicting
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:2px">
-            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-  </section>
-
-
-  <!-- Footer -->
-  <footer class="landing-footer">
-    <div class="landing-footer-brand">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-      </svg>
-      Chronos Protocol
-    </div>
-    <div style="color:var(--subtle)">
-      <%= networkName %>
-      <% if (contractAddress) { %>
-        &nbsp;·&nbsp; Contract:
-        <a href="<%= explorerUrl %>/address/<%= contractAddress %>" target="_blank" class="footer-contract-link">
-          <%= contractAddress.slice(0,6) %>…<%= contractAddress.slice(-4) %>
-        </a>
-      <% } %>
-    </div>
-    <div style="color:var(--subtle)">Testnet only — no real funds</div>
-  </footer>
-
-</div>
-<!-- END LANDING -->
-
-
-<!-- ─── APP SHELL ─────────────────────────────────────────────────────────── -->
-<div id="app" style="display:none">
-
-  <div id="toast-container"></div>
-  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
-
-  <div class="app-shell">
-
-    <!-- ── Sidebar ── -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-logo">
-        <div class="sidebar-logo-icon">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-        </div>
+  <main>
+    <div class="lp-wrap">
+      <section class="lp-hero">
         <div>
-          <div class="sidebar-title">Chronos</div>
-          <div class="sidebar-tagline">Prediction Protocol</div>
+          <h1>Prediction markets that resolve themselves</h1>
+          <p class="lead">Chronos is an autonomous AI oracle on Arc. It finds real-world events, opens YES or NO markets, gathers evidence after the deadline and settles the outcome on-chain in USDC.</p>
+          <div class="lp-ctas">
+            <button class="btn btn-primary btn-lg" data-launch>Open markets</button>
+            <a class="btn btn-secondary btn-lg" href="#how-it-works">How it works</a>
+          </div>
         </div>
+
+        <div class="card lp-preview" role="img" aria-label="Example markets">
+          <div class="cap">Example markets</div>
+          <ul class="rows">
+            <li class="row">
+              <div class="top"><span class="status"><i></i>Open</span><span class="countdown">23h 14m left</span></div>
+              <div class="row-title">Will the Fed hold rates at the next FOMC meeting?</div>
+              <div class="split"><div class="split-track"><div class="split-yes" style="width:62%"></div></div><div class="split-labels"><span>Yes 62%</span><span>No 38%</span></div></div>
+            </li>
+            <li class="row">
+              <div class="top"><span class="status status-resolved"><i></i>Resolved</span><span class="tag tag-yes">Yes</span></div>
+              <div class="row-title">Will CPI data be released on schedule this month?</div>
+              <div class="split"><div class="split-track"><div class="split-yes" style="width:81%"></div></div><div class="split-labels"><span>Yes 81%</span><span>No 19%</span></div></div>
+            </li>
+            <li class="row">
+              <div class="top"><span class="status status-closed"><i></i>Awaiting oracle</span><span class="countdown">Trading closed</span></div>
+              <div class="row-title">Will the next OPEC+ meeting extend current output cuts?</div>
+              <div class="split"><div class="split-track"><div class="split-yes" style="width:47%"></div></div><div class="split-labels"><span>Yes 47%</span><span>No 53%</span></div></div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="metrics lp-facts" style="margin-bottom:80px">
+        <div class="metric"><div class="k">Market type</div><div class="v">Yes / No</div></div>
+        <div class="metric"><div class="k">Protocol fee</div><div class="v"><%= feePct %>%</div><div class="n">On profit only</div></div>
+        <div class="metric"><div class="k">Minimum stake</div><div class="v">0.10 <small>USDC</small></div></div>
+        <div class="metric"><div class="k">Settlement</div><div class="v">On-chain</div><div class="n"><%= networkName %></div></div>
+      </div>
+    </div>
+
+    <section id="how-it-works" class="lp-section">
+      <div class="lp-wrap">
+        <h2>From event to payout in four steps</h2>
+        <div class="lp-steps">
+          <div class="lp-step"><span class="n">1</span><h3>Discover</h3><p>The oracle searches for timely, verifiable events and turns them into binary questions, up to three a day.</p></div>
+          <div class="lp-step"><span class="n">2</span><h3>Trade</h3><p>Connect a wallet and stake from 0.10 USDC on Yes or No before the trading deadline. Funds sit in the contract.</p></div>
+          <div class="lp-step"><span class="n">3</span><h3>Resolve</h3><p>After the deadline the oracle weighs evidence from several sources and resolves on-chain once confidence passes 85%.</p></div>
+          <div class="lp-step"><span class="n">4</span><h3>Claim</h3><p>Winners claim their share of the pool minus the <%= feePct %>% fee on profit. If the oracle misses its deadline, everyone is refunded.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="oracle" class="lp-section">
+      <div class="lp-wrap lp-split">
+        <div>
+          <h2>An oracle with no operator</h2>
+          <p class="lead">Chronos runs on a continuous loop. It finds events with Parallel Search, reasons about likely outcomes, collects evidence and submits signed resolutions straight to the smart contract. Nobody has to approve a result.</p>
+        </div>
+        <dl class="lp-defs" style="margin-top:4px">
+          <div><dt>Market discovery</dt><dd>Publishes up to 3 new markets per day.</dd></div>
+          <div><dt>Confidence threshold</dt><dd>Resolves only when confidence is above 85%. Anything less is left unresolved.</dd></div>
+          <div><dt>Deadline guarantee</dt><dd>If the resolution deadline passes, anyone can trigger a full refund.</dd></div>
+          <div><dt>Immutable results</dt><dd>Resolutions are written to the contract and can’t be changed afterwards.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="fees" class="lp-section">
+      <div class="lp-wrap">
+        <h2>Simple fees, safe refunds</h2>
+        <dl class="lp-defs" style="margin-top:40px">
+          <div><dt>Fee on profit only</dt><dd>The <%= feePct %>% protocol fee applies to winners’ profit. Original stakes and losing positions are never charged.</dd></div>
+          <div><dt>Full refund guarantee</dt><dd>If the oracle misses its deadline, every participant gets their exact USDC back.</dd></div>
+          <div><dt>USDC on Arc</dt><dd>Arc uses USDC as its gas token, so there’s no ETH to buy. Every stake, fee and payout is in USDC with sub-second finality.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="lp-cta">
+      <div class="lp-wrap">
+        <div><h2>Make your first prediction</h2><p>Connect a wallet and browse open markets on <%= networkName %>.</p></div>
+        <button class="btn btn-primary btn-lg" data-launch>Launch app</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-foot">
+    <div class="lp-wrap">
+      <span>Chronos Protocol · <%= networkName %></span>
+      <span>
+        <% if (contractAddress) { %>Contract <a class="mono" href="<%= explorerUrl %>/address/<%= contractAddress %>" target="_blank" rel="noopener"><%= contractAddress.slice(0,6) %>…<%= contractAddress.slice(-4) %></a> · <% } %>Testnet only. No real funds.
+      </span>
+    </div>
+  </footer>
+</div>
+
+<!-- ═══ App ═══════════════════════════════════════════════════════════════ -->
+<div id="app" hidden>
+  <div id="toast-container" aria-live="polite"></div>
+  <div class="backdrop" id="sidebar-backdrop"></div>
+
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Main">
+      <div class="sidebar-brand">
+        <span class="logo-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+        <span class="brand-name">Chronos</span>
       </div>
 
       <nav class="sidebar-nav">
-        <div class="nav-section-label">Protocol</div>
-        <button class="nav-item active" data-page="overview">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <div class="nav-group">Protocol</div>
+        <a class="nav-item" href="#overview" data-page="overview">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
           Overview
-        </button>
-        <button class="nav-item" data-page="markets">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-          Explore Markets
-        </button>
-        <button class="nav-item" data-page="positions">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          My Positions
-        </button>
-        <button class="nav-item" data-page="resolutions">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </a>
+        <a class="nav-item" href="#markets" data-page="markets">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg>
+          Markets
+        </a>
+        <a class="nav-item" href="#positions" data-page="positions">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
+          My positions
+        </a>
+        <a class="nav-item" href="#resolutions" data-page="resolutions">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           Resolutions
-        </button>
+        </a>
 
-        <div class="nav-section-label" style="margin-top:10px">Intelligence</div>
-        <button class="nav-item" data-page="agent">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-          Chronos Oracle
-        </button>
+        <div class="nav-group">Intelligence</div>
+        <a class="nav-item" href="#agent" data-page="agent">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+          Oracle
+        </a>
 
-        <div class="nav-section-label" style="margin-top:10px">System</div>
-        <button class="nav-item" data-page="settings">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <div class="nav-group">System</div>
+        <a class="nav-item" href="#settings" data-page="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
           Settings
-        </button>
+        </a>
       </nav>
 
-      <div class="sidebar-footer">
-        <div class="sidebar-footer-inner">
-          <span class="dot dot-green pulse"></span>
-          <span><%= networkName %> · v1</span>
-        </div>
-      </div>
+      <div class="sidebar-foot"><span class="status"><i></i></span><%= networkName %></div>
     </aside>
 
-    <!-- ── Main content ── -->
-    <div class="main-content">
+    <div class="main">
       <header class="topbar">
-        <button id="sidebar-toggle" class="hamburger-btn" aria-label="Open menu">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
-        </button>
-        <div class="topbar-network">
-          <span class="dot dot-green pulse"></span>
-          <span><%= networkName %></span>
+        <div class="topbar-left">
+          <button id="sidebar-toggle" class="btn btn-secondary btn-icon menu-btn" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <span class="topbar-network status"><i></i><%= networkName %></span>
         </div>
         <div class="topbar-right">
-          <div id="usdc-balance-display" class="topbar-balance" style="display:none">
-            <span id="usdc-balance-value">—</span>&nbsp;USDC
-          </div>
+          <span id="usdc-balance-display" class="topbar-balance" hidden><span id="usdc-balance-value">—</span> USDC</span>
           <div id="wallet-btn-container"></div>
         </div>
       </header>
 
-      <main class="page-content" id="page-root">
-        <div class="empty-state">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-          <h3>Loading Chronos…</h3>
-          <p>Connecting to <%= networkName %></p>
-        </div>
-      </main>
+      <main id="page-root"></main>
     </div>
-
   </div>
-
-  <div id="market-modal" class="modal-overlay" style="display:none">
-    <div class="modal-sheet" id="market-modal-content"></div>
-  </div>
-
 </div>
-<!-- END APP -->
-
-
-<script>
-  // ── Landing → App ──────────────────────────────────────────────────────────
-  function launchApp() {
-    document.getElementById('landing').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.body.style.overflow = '';
-  }
-  ['launch-app-nav','launch-app-hero','launch-app-bottom'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) el.addEventListener('click', launchApp);
-  });
-  if (window.location.hash && window.location.hash.length > 1) launchApp();
-
-  // ── Sidebar mobile open / close ────────────────────────────────────────────
-  var _sb  = document.getElementById('sidebar');
-  var _bd  = document.getElementById('sidebar-backdrop');
-  var _tog = document.getElementById('sidebar-toggle');
-
-  function openSidebar()  { _sb.classList.add('open'); _bd.classList.add('visible'); document.body.style.overflow='hidden'; }
-  function closeSidebar() { _sb.classList.remove('open'); _bd.classList.remove('visible'); document.body.style.overflow=''; }
-  window._openSidebar  = openSidebar;
-  window._closeSidebar = closeSidebar;
-
-  if (_tog) _tog.addEventListener('click', openSidebar);
-  if (_bd)  _bd.addEventListener('click',  closeSidebar);
-</script>
 
 <script type="module" src="/assets/js/app.js"></script>
 </body>

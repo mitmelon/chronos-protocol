@@ -1,183 +1,119 @@
-// ─── Agent Intelligence Page ─────────────────────────────────────────────────
+// ─── Oracle (agent) ──────────────────────────────────────────────────────────
 import { api } from '../api.js';
-import { formatDateTime, formatDate } from '../utils.js';
+import { esc, formatDateTime, timeAgo, emptyState } from '../utils.js';
+import { icon } from '../ui.js';
 
-export async function renderAgent(container) {
-  container.innerHTML = `
-    <div class="page-header">
-      <h1 class="page-title">Agent Intelligence</h1>
-      <p class="page-subtitle">Autonomous discovery, research, and resolution pipeline</p>
-    </div>
+const TYPES = [['all', 'All types'], ['discovery', 'Discovery'], ['resolution', 'Resolution'], ['keeper', 'Keeper']];
+const STEPS = [['discovery', 'Discovery'], ['validation', 'Validation'], ['keeper', 'Keeper'], ['resolution', 'Resolution']];
+const cap = (s) => String(s || '').replace(/^./, c => c.toUpperCase());
 
-    <!-- Daily report -->
-    <div class="stat-grid" id="agent-stats">
-      ${[1,2,3,4].map(() => `<div class="stat-card"><div class="skeleton" style="height:12px;width:80px;margin-bottom:10px"></div><div class="skeleton" style="height:28px;width:60px"></div></div>`).join('')}
-    </div>
+export async function renderAgent(view) {
+  view.innerHTML = `
+    <div class="page">
+      <div class="page-head"><div><h1>Oracle</h1><p>Discovery, research and resolution, run autonomously.</p></div></div>
+      <div class="stack">
+        <div class="metrics" id="metrics">
+          ${[0, 1, 2, 3].map(() => `<div class="metric"><div class="skeleton" style="height:14px;width:80px"></div><div class="skeleton" style="height:28px;width:50px;margin-top:10px"></div></div>`).join('')}
+        </div>
 
-    <!-- Pipeline status -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-      <div class="card" style="padding:20px">
-        <div style="font-weight:600;color:var(--ink);margin-bottom:14px;font-size:13.5px">Agent Pipeline</div>
-        <div id="pipeline-status">
-          ${['Discovery', 'Validation', 'Keeper', 'Resolution'].map(step => `
-            <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
-              <div class="dot dot-blue"></div>
-              <span style="font-size:13px;color:var(--ink-2)">${step}</span>
-              <span style="margin-left:auto;font-size:11px;color:var(--subtle)" id="step-${step.toLowerCase()}">—</span>
+        <div class="cols">
+          <section class="card card-pad">
+            <h2 class="section-title">Pipeline</h2>
+            <dl class="kv" id="pipeline" style="margin-top:14px">
+              ${STEPS.map(([k, l]) => `<div><dt>${l}</dt><dd id="step-${k}" style="font-weight:400;color:var(--muted)">—</dd></div>`).join('')}
+            </dl>
+          </section>
+          <section class="card card-pad">
+            <h2 class="section-title">Last run</h2>
+            <div id="last-run" style="margin-top:14px"><div class="skeleton" style="height:96px"></div></div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2 class="section-title">Run history</h2>
+            <div style="display:flex;gap:8px">
+              <select id="f-type" aria-label="Filter runs by type">${TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+              <button class="btn btn-secondary btn-sm btn-icon" id="refresh" aria-label="Refresh">${icon.refresh}</button>
             </div>
-          `).join('')}
-        </div>
+          </div>
+          <div class="table-wrap" id="runs"></div>
+        </section>
       </div>
+    </div>`;
 
-      <div class="card" style="padding:20px">
-        <div style="font-weight:600;color:var(--ink);margin-bottom:14px;font-size:13.5px">Today's Activity</div>
-        <div id="daily-activity">
-          <div class="skeleton" style="height:100px"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent runs -->
-    <div class="card">
-      <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-        <span style="font-weight:600;color:var(--ink)">Agent Run History</span>
-        <div style="display:flex;gap:6px">
-          <select class="select" id="run-type-filter" style="font-size:12px;padding:5px 24px 5px 8px">
-            <option value="all">All types</option>
-            <option value="discovery">Discovery</option>
-            <option value="resolution">Resolution</option>
-            <option value="keeper">Keeper</option>
-          </select>
-          <button class="btn btn-sm btn-ghost" id="refresh-btn">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          </button>
-        </div>
-      </div>
-      <div id="runs-list"></div>
-    </div>
-  `;
-
-  container.querySelector('#run-type-filter').addEventListener('change', (e) => loadRuns(e.target.value));
-  container.querySelector('#refresh-btn').addEventListener('click', () => loadAll());
+  const $ = (s) => view.querySelector(s);
+  const typeEl = $('#f-type');
+  typeEl.addEventListener('change', () => loadRuns());
+  $('#refresh').addEventListener('click', () => loadAll());
 
   async function loadAll() {
-    const [reportResult, runsResult] = await Promise.allSettled([
-      api.dailyReport(),
-      api.agentRuns({ limit: 30 }),
-    ]);
+    const [report, recent] = await Promise.allSettled([api.dailyReport(), api.agentRuns({ limit: 30 })]);
+    if (!view.isConnected) return;
 
-    // Stats
-    const stats = container.querySelector('#agent-stats');
-    if (reportResult.status === 'fulfilled') {
-      const r = reportResult.value;
-      stats.innerHTML = `
-        <div class="stat-card">
-          <div class="stat-label">Status</div>
-          <div style="display:flex;align-items:center;gap:7px;margin-top:4px">
-            <div class="dot ${r.currentStatus === 'running' ? 'dot-green pulse' : 'dot-blue'}"></div>
-            <span style="font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--ink)">${r.currentStatus === 'running' ? 'Running' : 'Idle'}</span>
-          </div>
-          ${r.currentRunType ? `<div class="stat-subtext">${r.currentRunType}</div>` : ''}
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Runs Today</div>
-          <div class="stat-value">${r.runsToday}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Markets Published</div>
-          <div class="stat-value">${r.marketsPublishedToday}</div>
-          <div class="stat-subtext">Today</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Resolved Today</div>
-          <div class="stat-value">${r.marketsResolvedToday}</div>
-        </div>
-      `;
+    if (report.status === 'fulfilled') {
+      const r = report.value;
+      const running = r.currentStatus === 'running';
+      $('#metrics').innerHTML = `
+        <div class="metric"><div class="k">Status</div><div class="v" style="font-size:20px;padding-top:4px">${running ? 'Running' : 'Idle'}</div><div class="n">${esc(r.currentRunType || 'Waiting for next run')}</div></div>
+        <div class="metric"><div class="k">Runs today</div><div class="v">${esc(r.runsToday ?? 0)}</div></div>
+        <div class="metric"><div class="k">Markets published</div><div class="v">${esc(r.marketsPublishedToday ?? 0)}</div><div class="n">Today</div></div>
+        <div class="metric"><div class="k">Resolved</div><div class="v">${esc(r.marketsResolvedToday ?? 0)}</div><div class="n">Today</div></div>`;
 
-      // Daily activity
-      const activity = container.querySelector('#daily-activity');
-      activity.innerHTML = r.lastRun ? `
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Last run: ${formatDateTime(r.lastRun.startedAt)}</div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          ${r.lastRun.type === 'discovery' ? `
-            <div style="display:flex;justify-content:space-between;font-size:12px">
-              <span style="color:var(--muted)">Considered</span><span style="color:var(--ink)">${r.lastRun.marketsConsidered || 0}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:12px">
-              <span style="color:var(--muted)">Published</span><span style="color:var(--success)">${r.lastRun.marketsPublished || 0}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:12px">
-              <span style="color:var(--muted)">Rejected</span><span style="color:var(--danger)">${r.lastRun.marketsRejected || 0}</span>
-            </div>
-          ` : r.lastRun.type === 'resolution' ? `
-            <div style="display:flex;justify-content:space-between;font-size:12px">
-              <span style="color:var(--muted)">Checked</span><span style="color:var(--ink)">${r.lastRun.marketsChecked || 0}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:12px">
-              <span style="color:var(--muted)">Resolved</span><span style="color:var(--success)">${r.lastRun.marketsResolved || 0}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:12px">
-              <span style="color:var(--muted)">Unresolvable</span><span style="color:var(--warning)">${r.lastRun.marketsUnresolvable || 0}</span>
-            </div>
-          ` : `<div style="font-size:12px;color:var(--muted)">Type: ${r.lastRun.type}</div>`}
-        </div>
-      ` : `<p style="font-size:12px;color:var(--subtle)">No runs today yet.</p>`;
+      const l = r.lastRun;
+      const row = (k, v) => `<div><dt>${k}</dt><dd class="num">${esc(v ?? 0)}</dd></div>`;
+      $('#last-run').innerHTML = l ? `
+        <p class="hint" style="margin:0 0 12px">${cap(l.type)} run, ${formatDateTime(l.startedAt)}</p>
+        <dl class="kv">${l.type === 'discovery' ? row('Considered', l.marketsConsidered) + row('Published', l.marketsPublished) + row('Rejected', l.marketsRejected)
+          : l.type === 'resolution' ? row('Checked', l.marketsChecked) + row('Resolved', l.marketsResolved) + row('Unresolvable', l.marketsUnresolvable)
+          : row('Status', l.status)}</dl>`
+        : '<p class="hint" style="margin:0">No runs yet today.</p>';
+    } else {
+      $('#metrics').innerHTML = `<div class="metric" style="grid-column:1/-1"><div class="n">Oracle report is unavailable.</div></div>`;
+      $('#last-run').innerHTML = '<p class="hint" style="margin:0">Unavailable.</p>';
     }
 
-    loadRuns('all');
+    if (recent.status === 'fulfilled') {
+      const runs = recent.value.runs || [];
+      STEPS.forEach(([k]) => {
+        const last = runs.find(x => x.type === k);
+        const el = $(`#step-${k}`);
+        if (el) el.textContent = last ? `${cap(last.status)}, ${timeAgo(last.startedAt)}` : '—';
+      });
+    }
+    loadRuns();
   }
 
-  async function loadRuns(type = 'all') {
-    const list = container.querySelector('#runs-list');
-    list.style.opacity = '0.5';
+  let req = 0;
+  async function loadRuns() {
+    const mine = ++req, type = typeEl.value, box = $('#runs');
+    box.classList.add('loading');
     try {
-      const params = type !== 'all' ? { type, limit: 30 } : { limit: 30 };
-      const { runs = [] } = await api.agentRuns(params);
-      list.style.opacity = '1';
-
-      if (!runs.length) {
-        list.innerHTML = `<div class="empty-state" style="padding:40px"><h3>No agent runs yet</h3><p>The agent will run automatically on its schedule.</p></div>`;
-        return;
-      }
-
-      list.innerHTML = `
-        <div class="table-wrap" style="border:none;border-radius:0">
-          <table>
-            <thead><tr>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Started</th>
-              <th>Duration</th>
-              <th>Details</th>
-              <th>Errors</th>
-            </tr></thead>
-            <tbody>
-              ${runs.map(run => {
-                const duration = run.completedAt ? Math.round((new Date(run.completedAt) - new Date(run.startedAt)) / 1000) : null;
-                const statusColor = { completed: 'var(--success)', failed: 'var(--danger)', running: 'var(--accent)', skipped: 'var(--warning)' }[run.status] || 'var(--muted)';
-
-                let details = '—';
-                if (run.type === 'discovery') details = `${run.marketsPublished || 0} published / ${run.marketsConsidered || 0} considered`;
-                else if (run.type === 'resolution') details = `${run.marketsResolved || 0} resolved, ${run.marketsRefunded || 0} refunded`;
-                else if (run.type === 'keeper') details = `${run.dbSynced || 0} synced, ${run.tradingClosed || 0} closed`;
-
-                return `<tr>
-                  <td style="font-weight:600;text-transform:capitalize;color:var(--ink)">${run.type}</td>
-                  <td><span style="color:${statusColor};font-size:12px;font-weight:600;text-transform:capitalize">${run.status}</span></td>
-                  <td style="font-size:12px;color:var(--muted)">${formatDateTime(run.startedAt)}</td>
-                  <td style="font-size:12px;color:var(--muted)">${duration !== null ? duration + 's' : run.status === 'running' ? '<span class="pulse">…</span>' : '—'}</td>
-                  <td style="font-size:12px;color:var(--ink-2)">${details}</td>
-                  <td style="font-size:12px;color:${(run.errors?.length || 0) > 0 ? 'var(--danger)' : 'var(--muted)'}">${run.errors?.length || 0}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
+      const { runs = [] } = await api.agentRuns(type !== 'all' ? { type, limit: 30 } : { limit: 30 });
+      if (mine !== req) return;
+      if (!runs.length) { box.innerHTML = emptyState('No runs yet', 'The oracle runs automatically on its schedule.'); return; }
+      box.innerHTML = `
+        <table class="table">
+          <thead><tr><th>Type</th><th>Status</th><th>Started</th><th class="r">Duration</th><th>Details</th><th class="r">Errors</th></tr></thead>
+          <tbody>${runs.map(run => {
+            const secs = run.completedAt ? Math.round((new Date(run.completedAt) - new Date(run.startedAt)) / 1000) : null;
+            const details = run.type === 'discovery' ? `${run.marketsPublished || 0} published of ${run.marketsConsidered || 0} considered`
+              : run.type === 'resolution' ? `${run.marketsResolved || 0} resolved, ${run.marketsRefunded || 0} refunded`
+              : run.type === 'keeper' ? `${run.dbSynced || 0} synced, ${run.tradingClosed || 0} closed` : '—';
+            const errs = run.errors?.length || 0;
+            return `<tr>
+              <td style="font-weight:500">${esc(cap(run.type))}</td>
+              <td><span class="tag${run.status === 'failed' ? ' tag-yes' : run.status === 'completed' ? '' : ' tag-outline'}">${esc(cap(run.status))}</span></td>
+              <td class="num" style="color:var(--muted)">${formatDateTime(run.startedAt)}</td>
+              <td class="r num" style="color:var(--muted)">${secs !== null ? secs + 's' : run.status === 'running' ? 'Running' : '—'}</td>
+              <td>${esc(details)}</td>
+              <td class="r num" style="${errs ? 'font-weight:600' : 'color:var(--faint)'}">${errs}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>`;
     } catch (err) {
-      list.style.opacity = '1';
-      list.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">${err.message}</p></div>`;
-    }
+      if (mine === req) box.innerHTML = emptyState('Could not load runs', err.message);
+    } finally { if (mine === req) box.classList.remove('loading'); }
   }
 
   loadAll();

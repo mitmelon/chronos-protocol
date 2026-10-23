@@ -1,145 +1,76 @@
-// ─── Settings Page ───────────────────────────────────────────────────────────
+// ─── Settings ────────────────────────────────────────────────────────────────
 import { api } from '../api.js';
-import { shortAddr, explorerAddrUrl } from '../utils.js';
 import { wallet } from '../wallet.js';
+import { esc, shortAddr, formatUsdc, explorerAddrUrl } from '../utils.js';
+import { icon, onWallet } from '../ui.js';
 
-export async function renderSettings(container) {
-  container.innerHTML = `
-    <div class="page-header">
-      <h1 class="page-title">Settings</h1>
-      <p class="page-subtitle">Protocol configuration and wallet information</p>
-    </div>
+const USDC = () => window.CHRONOS_USDC || '0x3600000000000000000000000000000000000000';
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <!-- Wallet section -->
-      <div class="card" style="padding:22px">
-        <div style="font-weight:600;color:var(--ink);margin-bottom:16px;font-size:13.5px">Wallet</div>
-        <div id="wallet-info">
-          ${wallet.connected ? renderWalletInfo() : '<button class="btn btn-primary btn-full" id="connect-btn">Connect Wallet</button>'}
-        </div>
-      </div>
+export async function renderSettings(view) {
+  const contract = window.CHRONOS_CONTRACT;
+  const contractUrl = explorerAddrUrl(contract);
 
-      <!-- Protocol settings -->
-      <div class="card" style="padding:22px">
-        <div style="font-weight:600;color:var(--ink);margin-bottom:16px;font-size:13.5px">Protocol Settings</div>
-        <div id="protocol-settings">
-          <div class="skeleton" style="height:120px;border-radius:var(--r-lg)"></div>
-        </div>
-      </div>
-
-      <!-- Network -->
-      <div class="card" style="padding:22px">
-        <div style="font-weight:600;color:var(--ink);margin-bottom:16px;font-size:13.5px">Network</div>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-inner">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Chain</div>
-            <div style="font-size:13.5px;font-weight:600;color:var(--ink)">Arc Testnet</div>
-            <div style="font-size:11px;font-family:var(--font-mono);color:var(--subtle);margin-top:2px">Chain ID: 5042002</div>
+  view.innerHTML = `
+    <div class="page">
+      <div class="page-head"><div><h1>Settings</h1><p>Wallet, network and protocol configuration.</p></div></div>
+      <div class="cols">
+        <section class="card card-pad"><h2 class="section-title">Wallet</h2><div id="wallet" style="margin-top:14px"></div></section>
+        <section class="card card-pad"><h2 class="section-title">Protocol</h2><div id="protocol" style="margin-top:14px"><div class="skeleton" style="height:120px"></div></div></section>
+        <section class="card card-pad">
+          <h2 class="section-title">Network</h2>
+          <dl class="kv" style="margin-top:14px">
+            <div><dt>Chain</dt><dd>${esc(window.CHRONOS_NETWORK || 'Arc Testnet')}</dd></div>
+            <div><dt>Chain ID</dt><dd class="num">${esc(window.CHRONOS_CHAIN_ID || '5042002')}</dd></div>
+            <div><dt>USDC</dt><dd class="mono">${esc(USDC())}</dd></div>
+            <div><dt>Contract</dt><dd class="mono">${contract ? esc(contract) : 'Not deployed yet'}</dd></div>
+          </dl>
+          ${contractUrl ? `<a class="btn btn-secondary btn-sm" style="margin-top:16px" href="${esc(contractUrl)}" target="_blank" rel="noopener">View contract ${icon.external}</a>` : ''}
+        </section>
+        <section class="card card-pad">
+          <h2 class="section-title">Resources</h2>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+            <a class="btn btn-secondary" style="justify-content:space-between" href="${esc(window.CHRONOS_EXPLORER || 'https://explorer.testnet.arc.io')}" target="_blank" rel="noopener">Arc explorer ${icon.external}</a>
+            <a class="btn btn-secondary" style="justify-content:space-between" href="https://faucet.circle.com" target="_blank" rel="noopener">Get testnet USDC ${icon.external}</a>
+            <a class="btn btn-secondary" style="justify-content:space-between" href="https://docs.arc.io" target="_blank" rel="noopener">Arc documentation ${icon.external}</a>
           </div>
-          <div class="card-inner">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">USDC Address</div>
-            <div style="font-size:12px;font-family:var(--font-mono);color:var(--ink-2);word-break:break-all">${window.CHRONOS_USDC || '0x3600000000000000000000000000000000000000'}</div>
-          </div>
-          <div class="card-inner">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Contract Address</div>
-            <div style="font-size:12px;font-family:var(--font-mono);color:${window.CHRONOS_CONTRACT ? 'var(--ink-2)' : 'var(--subtle)'};word-break:break-all">
-              ${window.CHRONOS_CONTRACT || 'Not deployed yet'}
-            </div>
-            ${window.CHRONOS_CONTRACT && window.CHRONOS_EXPLORER ? `<a href="${window.CHRONOS_EXPLORER}/address/${window.CHRONOS_CONTRACT}" target="_blank" style="font-size:11px;color:var(--accent);margin-top:4px;display:inline-block">View on Explorer</a>` : ''}
-          </div>
-        </div>
+        </section>
       </div>
+    </div>`;
 
-      <!-- Resources -->
-      <div class="card" style="padding:22px">
-        <div style="font-weight:600;color:var(--ink);margin-bottom:16px;font-size:13.5px">Resources</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <a href="https://explorer.testnet.arc.io" target="_blank" class="btn btn-ghost" style="justify-content:flex-start;gap:8px">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Arc Testnet Explorer
-          </a>
-          <a href="https://faucet.circle.com" target="_blank" class="btn btn-ghost" style="justify-content:flex-start;gap:8px">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            Get Testnet USDC
-          </a>
-          <a href="https://docs.arc.io" target="_blank" class="btn btn-ghost" style="justify-content:flex-start;gap:8px">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            Arc Documentation
-          </a>
-        </div>
-      </div>
-    </div>
-  `;
+  const box = view.querySelector('#wallet');
 
-  container.querySelector('#connect-btn')?.addEventListener('click', async () => {
-    await wallet.connect();
-    container.querySelector('#wallet-info').innerHTML = renderWalletInfo();
-  });
-
-  // Load USDC balance
-  if (wallet.connected) {
-    const balanceEl = document.createElement('div');
-    balanceEl.style.cssText = 'font-size:11px;color:var(--muted);margin-top:8px';
-    balanceEl.textContent = 'Loading USDC balance…';
-    container.querySelector('#wallet-info').appendChild(balanceEl);
-    const bal = await wallet.usdcBalance();
-    const formatted = (Number(BigInt(bal)) / 1e6).toFixed(2);
-    balanceEl.innerHTML = `USDC Balance: <span style="color:var(--ink);font-weight:600">${formatted} USDC</span>`;
+  async function drawWallet() {
+    if (!wallet.connected) {
+      box.innerHTML = `<p class="hint" style="margin:0 0 14px">No wallet connected.</p><button class="btn btn-primary" id="connect">Connect wallet</button>`;
+      box.querySelector('#connect').addEventListener('click', () => wallet.connect());
+      return;
+    }
+    box.innerHTML = `
+      <dl class="kv">
+        <div><dt>Address</dt><dd class="mono">${esc(wallet.account)}</dd></div>
+        <div><dt>Network</dt><dd>${wallet.onRightChain ? 'Arc Testnet' : 'Wrong network'}</dd></div>
+        <div><dt>USDC balance</dt><dd class="num" id="bal">…</dd></div>
+      </dl>
+      ${wallet.onRightChain ? '' : '<button class="btn btn-primary btn-sm" id="switch" style="margin-top:16px">Switch to Arc Testnet</button>'}`;
+    box.querySelector('#switch')?.addEventListener('click', () => wallet.switchToArc());
+    try { const b = await wallet.usdcBalance(); const el = box.querySelector('#bal'); if (el) el.textContent = `${formatUsdc(b)} USDC`; }
+    catch { const el = box.querySelector('#bal'); if (el) el.textContent = '—'; }
   }
+  drawWallet();
+  onWallet(view, drawWallet);
 
-  // Protocol settings
   try {
-    const settings = await api.publicSettings();
-    const sec = container.querySelector('#protocol-settings');
-    sec.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="card-inner" style="display:flex;justify-content:space-between">
-          <span style="font-size:12px;color:var(--muted)">Protocol Fee</span>
-          <span style="font-size:13px;font-weight:600;color:var(--ink)">${(settings.feeBps / 100).toFixed(1)}% on profit</span>
-        </div>
-        <div class="card-inner" style="display:flex;justify-content:space-between">
-          <span style="font-size:12px;color:var(--muted)">Grace Period</span>
-          <span style="font-size:13px;font-weight:600;color:var(--ink)">${settings.gracePeriodDays} days</span>
-        </div>
-        <div class="card-inner" style="display:flex;justify-content:space-between">
-          <span style="font-size:12px;color:var(--muted)">Protocol Status</span>
-          <span style="font-size:13px;font-weight:600;color:${settings.paused ? 'var(--danger)' : 'var(--success)'}">
-            ${settings.paused ? 'Paused' : 'Active'}
-          </span>
-        </div>
-        ${settings.oracle ? `
-          <div class="card-inner">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Oracle Address</div>
-            <div style="font-size:12px;font-family:var(--font-mono);color:var(--ink-2)">${shortAddr(settings.oracle)}</div>
-          </div>
-        ` : ''}
-        ${settings.treasury ? `
-          <div class="card-inner">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Treasury Address</div>
-            <div style="font-size:12px;font-family:var(--font-mono);color:var(--ink-2)">${shortAddr(settings.treasury)}</div>
-          </div>
-        ` : ''}
-      </div>
-    `;
-  } catch (err) {
-    container.querySelector('#protocol-settings').innerHTML = `<p style="font-size:12px;color:var(--muted)">Contract not yet deployed or reachable.</p>`;
+    const s = await api.publicSettings();
+    view.querySelector('#protocol').innerHTML = `
+      <dl class="kv">
+        <div><dt>Protocol fee</dt><dd>${(s.feeBps / 100).toFixed(1)}% of profit</dd></div>
+        <div><dt>Refund grace period</dt><dd>${esc(s.gracePeriodDays)} days</dd></div>
+        <div><dt>Status</dt><dd>${s.paused ? 'Paused' : 'Active'}</dd></div>
+        ${s.oracle ? `<div><dt>Oracle</dt><dd class="mono">${esc(shortAddr(s.oracle))}</dd></div>` : ''}
+        ${s.treasury ? `<div><dt>Treasury</dt><dd class="mono">${esc(shortAddr(s.treasury))}</dd></div>` : ''}
+      </dl>`;
+  } catch {
+    const el = view.querySelector('#protocol');
+    if (el) el.innerHTML = '<p class="hint" style="margin:0">The contract is not deployed or can’t be reached.</p>';
   }
-}
-
-function renderWalletInfo() {
-  if (!wallet.connected) return '';
-  return `
-    <div class="card-inner" style="margin-bottom:10px">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Connected Address</div>
-      <div style="font-size:13px;font-family:var(--font-mono);color:var(--ink)">${wallet.account}</div>
-    </div>
-    <div class="card-inner" style="margin-bottom:10px">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Network</div>
-      <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:${wallet.onRightChain ? 'var(--success)' : 'var(--danger)'}">
-        <div class="dot ${wallet.onRightChain ? 'dot-green' : 'dot-red'}"></div>
-        ${wallet.onRightChain ? 'Arc Testnet' : 'Wrong Network'}
-      </div>
-    </div>
-    ${!wallet.onRightChain ? `<button class="btn btn-primary btn-sm" onclick="window.ethereum && window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x4CEF52'}]})">Switch to Arc Testnet</button>` : ''}
-  `;
 }

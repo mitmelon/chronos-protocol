@@ -1,152 +1,97 @@
-// ─── Overview Page ───────────────────────────────────────────────────────────
+// ─── Overview ────────────────────────────────────────────────────────────────
 import { api } from '../api.js';
-import { formatUsdc, formatDate, stateClass, outcomeClass, countdown } from '../utils.js';
 import { wallet } from '../wallet.js';
+import { esc, formatUsdc, formatDate, countdown, outcomeTag, emptyState, skeletonRows } from '../utils.js';
+import { onWallet, wireClaimButtons } from '../ui.js';
 
-export async function renderOverview(container) {
-  container.innerHTML = `
-    <div class="page-header">
-      <h1 class="page-title">Overview</h1>
-      <p class="page-subtitle">Protocol activity, open markets, and your positions</p>
-    </div>
-
-    <!-- Stats -->
-    <div class="stat-grid" id="stat-grid">
-      ${['', '', '', ''].map(() => `<div class="stat-card"><div class="skeleton" style="height:12px;width:80px;margin-bottom:10px"></div><div class="skeleton" style="height:32px;width:120px"></div></div>`).join('')}
-    </div>
-
-    <!-- Two-column layout -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px" class="two-col">
-      <!-- Open markets -->
-      <div class="card" style="padding:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <span style="font-weight:600;color:var(--ink)">Open Markets</span>
-          <button class="btn btn-sm btn-ghost" data-page="markets">View All</button>
+export async function renderOverview(view) {
+  view.innerHTML = `
+    <div class="page">
+      <div class="page-head"><div><h1>Overview</h1><p>Protocol activity, open markets and your payouts.</p></div></div>
+      <div class="stack">
+        <div class="metrics" id="metrics">
+          ${[0, 1, 2, 3].map(() => `<div class="metric"><div class="skeleton" style="height:14px;width:90px"></div><div class="skeleton" style="height:28px;width:70px;margin-top:10px"></div></div>`).join('')}
         </div>
-        <div id="open-markets-list"></div>
-      </div>
 
-      <!-- Recent resolutions -->
-      <div class="card" style="padding:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <span style="font-weight:600;color:var(--ink)">Recent Resolutions</span>
-          <button class="btn btn-sm btn-ghost" data-page="resolutions">Archive</button>
+        <div id="claim-section" hidden></div>
+
+        <div class="cols">
+          <section class="card">
+            <div class="card-head"><h2 class="section-title">Open markets</h2><a class="btn btn-quiet btn-sm" href="#markets">View all</a></div>
+            <div id="open-list">${skeletonRows(3)}</div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2 class="section-title">Recent resolutions</h2><a class="btn btn-quiet btn-sm" href="#resolutions">View all</a></div>
+            <div id="res-list">${skeletonRows(3)}</div>
+          </section>
         </div>
-        <div id="recent-resolutions-list"></div>
       </div>
-    </div>
+    </div>`;
 
-    <!-- My positions (if connected) -->
-    <div id="my-positions-section" style="display:none">
-      <div class="card" style="padding:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <span style="font-weight:600;color:var(--ink)">My Active Positions</span>
-          <button class="btn btn-sm btn-ghost" data-page="positions">All Positions</button>
-        </div>
-        <div id="my-positions-list"></div>
-      </div>
-    </div>
-  `;
+  const $ = (s) => view.querySelector(s);
 
-  // Wire nav buttons
-  container.querySelectorAll('[data-page]').forEach(btn => {
-    btn.addEventListener('click', () => window.chronosRouter(btn.dataset.page));
-  });
-
-  // Load data concurrently
-  const [protocolResult, marketsResult, resolutionsResult] = await Promise.allSettled([
+  const [protocol, markets, resolutions] = await Promise.allSettled([
     api.protocolStatus(),
     api.markets({ state: 'Open', limit: 5, sort: 'deadline' }),
     api.resolutions({ limit: 5 }),
   ]);
 
-  // Render stats
-  const stats = container.querySelector('#stat-grid');
-  if (protocolResult.status === 'fulfilled') {
-    const p = protocolResult.value;
-    stats.innerHTML = `
-      <div class="stat-card">
-        <div class="stat-label">Open Markets</div>
-        <div class="stat-value">${p.openMarkets ?? '—'}</div>
-        <div class="stat-subtext">Accepting positions</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Resolved Markets</div>
-        <div class="stat-value">${p.resolvedMarkets ?? '—'}</div>
-        <div class="stat-subtext">Total lifecycle</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Total Volume</div>
-        <div class="stat-value">${formatUsdc(p.totalVolumeUsdc, 0)} <span style="font-size:14px;font-weight:500;color:var(--muted)">USDC</span></div>
-        <div class="stat-subtext">All-time staked</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Protocol Fee</div>
-        <div class="stat-value">${(p.feeBps / 100).toFixed(1)}%</div>
-        <div class="stat-subtext">On winners' profit</div>
-      </div>
-    `;
+  if (protocol.status === 'fulfilled') {
+    const p = protocol.value;
+    $('#metrics').innerHTML = `
+      <div class="metric"><div class="k">Open markets</div><div class="v">${esc(p.openMarkets ?? '—')}</div><div class="n">Accepting positions</div></div>
+      <div class="metric"><div class="k">Resolved markets</div><div class="v">${esc(p.resolvedMarkets ?? '—')}</div><div class="n">Settled on-chain</div></div>
+      <div class="metric"><div class="k">Total volume</div><div class="v">${formatUsdc(p.totalVolumeUsdc, 0)} <small>USDC</small></div><div class="n">Staked all-time</div></div>
+      <div class="metric"><div class="k">Protocol fee</div><div class="v">${(p.feeBps / 100).toFixed(1)}%</div><div class="n">On winners’ profit only</div></div>`;
   } else {
-    stats.innerHTML = `<div class="stat-card" style="grid-column:1/-1"><p style="color:var(--muted);font-size:13px;text-align:center">Protocol data unavailable — contract may not be deployed yet.</p></div>`;
+    $('#metrics').innerHTML = `<div class="metric" style="grid-column:1/-1"><div class="n">Protocol data is unavailable. The contract may not be deployed yet.</div></div>`;
   }
 
-  // Render open markets
-  const openList = container.querySelector('#open-markets-list');
-  if (marketsResult.status === 'fulfilled' && marketsResult.value.markets?.length) {
-    openList.innerHTML = marketsResult.value.markets.map(m => {
-      const cd = countdown(m.tradingDeadline);
-      return `
-        <div style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer" class="market-row" data-market-id="${m.marketId}">
-          <div style="font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${m.question}</div>
-          <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)">
-            <span class="${cd.urgent ? 'countdown urgent' : 'countdown'}">${cd.label} left</span>
-            <span>·</span>
-            <span>${formatUsdc(m.totalPool)} USDC</span>
-          </div>
-        </div>
-      `;
-    }).join('') + (marketsResult.value.markets.length === 0 ? '<div class="empty-state" style="padding:30px"><p>No open markets yet.</p></div>' : '');
-    openList.querySelectorAll('.market-row').forEach(row => {
-      row.addEventListener('click', () => window.chronosRouter('market', { id: row.dataset.marketId }));
-    });
-  } else {
-    openList.innerHTML = '<div class="empty-state" style="padding:30px 0"><p>No open markets found.</p></div>';
-  }
+  const open = markets.status === 'fulfilled' ? markets.value.markets || [] : [];
+  $('#open-list').innerHTML = open.length
+    ? `<ul class="rows">${open.map(m => {
+        const cd = countdown(m.tradingDeadline);
+        return `<li><a class="row" href="#market/${esc(m.marketId)}">
+          <div class="row-main">
+            <div class="row-title">${esc(m.question)}</div>
+            <div class="row-sub"><span class="countdown${cd.urgent ? ' urgent' : ''}">${esc(cd.label)} left</span> &nbsp;${formatUsdc(m.totalPool)} USDC staked</div>
+          </div></a></li>`;
+      }).join('')}</ul>`
+    : emptyState('No open markets', 'New markets appear when the oracle publishes them.');
 
-  // Render recent resolutions
-  const resList = container.querySelector('#recent-resolutions-list');
-  if (resolutionsResult.status === 'fulfilled' && resolutionsResult.value.resolutions?.length) {
-    resList.innerHTML = resolutionsResult.value.resolutions.map(m => `
-      <div style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:10px">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${m.question}</div>
-          <div style="font-size:11px;color:var(--muted)">${formatDate(m.resolvedAt)}</div>
-        </div>
-        <span class="chip ${outcomeClass(m.outcome)}">${m.outcome}</span>
-      </div>
-    `).join('');
-  } else {
-    resList.innerHTML = '<div class="empty-state" style="padding:30px 0"><p>No resolved markets yet.</p></div>';
-  }
+  const done = resolutions.status === 'fulfilled' ? resolutions.value.resolutions || [] : [];
+  $('#res-list').innerHTML = done.length
+    ? `<ul class="rows">${done.map(m => `<li><a class="row" href="#market/${esc(m.marketId)}">
+          <div class="row-main"><div class="row-title">${esc(m.question)}</div><div class="row-sub">${formatDate(m.resolvedAt)}</div></div>
+          ${outcomeTag(m.outcome)}</a></li>`).join('')}</ul>`
+    : emptyState('Nothing resolved yet', 'Resolved markets and their outcomes show up here.');
 
-  // My positions
-  if (wallet.connected) {
-    const section = container.querySelector('#my-positions-section');
-    section.style.display = 'block';
+  // Claimable payouts (only when a wallet is connected)
+  async function loadClaims() {
+    const sec = $('#claim-section');
+    if (!sec) return;
+    if (!wallet.connected) { sec.hidden = true; return; }
     try {
-      const { claimable } = await api.claimable(wallet.account);
-      const list = container.querySelector('#my-positions-list');
-      if (claimable.length) {
-        list.innerHTML = claimable.map(pos => `
-          <div style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
-            <div style="flex:1;font-size:13px;font-weight:600;color:var(--ink)">${pos.question}</div>
-            <span style="font-size:12px;color:var(--success);font-weight:700">${formatUsdc(pos.netPayout)} USDC</span>
-            <button class="btn btn-sm" style="background:var(--success-bg);color:var(--success)" data-claim-market="${pos.marketId}" data-market-state="${pos.marketState}">Claim</button>
+      const { claimable = [] } = await api.claimable(wallet.account);
+      if (!claimable.length) { sec.hidden = true; return; }
+      const total = claimable.reduce((s, p) => s + BigInt(p.netPayout || '0'), 0n).toString();
+      sec.hidden = false;
+      sec.innerHTML = `
+        <div class="notice">
+          <div class="notice-head">
+            <div><div class="section-title">${claimable.length} payout${claimable.length > 1 ? 's' : ''} ready to claim</div>
+            <div class="row-sub">${formatUsdc(total)} USDC in total</div></div>
           </div>
-        `).join('');
-      } else {
-        list.innerHTML = '<p style="font-size:13px;color:var(--muted);padding:8px 0">No claimable positions.</p>';
-      }
-    } catch {}
+          <ul class="rows" style="margin-top:8px">${claimable.map(p => `
+            <li class="row">
+              <div class="row-main"><div class="row-title">${esc(p.question)}</div></div>
+              <span class="num" style="font-weight:600">${formatUsdc(p.netPayout)} USDC</span>
+              <button class="btn btn-primary btn-sm" data-claim="${esc(p.marketId)}" data-state="${esc(p.marketState)}">Claim</button>
+            </li>`).join('')}</ul>
+        </div>`;
+      wireClaimButtons(sec);
+    } catch { sec.hidden = true; }
   }
+  loadClaims();
+  onWallet(view, loadClaims);
 }
