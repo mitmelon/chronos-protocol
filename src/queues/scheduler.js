@@ -32,6 +32,10 @@ async function scheduleRepeatJobs() {
     { repeat: { pattern: config.agent.keeperSchedule } },
   );
 
+  // Run the keeper once right away: it syncs markets and makes sure every active market has its due-time resolution job
+  // (Redis may have been flushed, or the market may predate the queue).
+  await keeperQueue.add('keeper-startup', {}, { removeOnComplete: true, attempts: 1 });
+
   console.log('[scheduler] Repeating jobs registered:');
   console.log(`  discovery:  ${config.agent.discoverySchedule}`);
   console.log(`  resolution: ${config.agent.resolutionSchedule}`);

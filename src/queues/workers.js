@@ -15,8 +15,12 @@ const { CONNECTION } = require('./client');
 const { runDiscovery } = require('../agent/discover');
 const { runResolution } = require('../agent/resolve');
 const { runKeeper }    = require('../agent/keeper');
+const { handleResolutionJob } = require('./handlers');
 
-const CONCURRENCY = 1; // each job type runs serially to avoid race conditions
+const CONCURRENCY = 1; // discovery and keeper run serially to avoid race conditions
+// Resolution runs per-market jobs, each guarded by its own Mongo lock and the chain-state check, so a few can run at once.
+// (All on-chain writes from the oracle wallet are serialised inside services/contract.js, so nonces never collide.)
+const RESOLUTION_CONCURRENCY = 2;
 
 let _workers = [];
 
@@ -40,14 +44,15 @@ async function startWorkers() {
   const resolutionWorker = new Worker(
     'chronos-resolution',
     async (job) => {
-      console.log(`[worker:resolution] Starting job ${job.id}`);
-      const result = await runResolution();
-      console.log(`[worker:resolution] Job ${job.id} done — resolved: ${result.marketsResolved}, refunded: ${result.marketsRefunded}`);
+      console.log(`[worker:resolution] Starting job ${job.id} (${job.name})`);
+      // 'resolve-market' = one market (due time, deadline, retry or a user pressing Resolve); anything else = the sweep
+      const result = await handleResolutionJob(job);
+      console.log(`[worker:resolution] Job ${job.id} done — ${result.status}${result.marketsResolved !== undefined ? `, resolved: ${result.marketsResolved}, refunded: ${result.marketsRefunded}` : ''}`);
       return result;
     },
     {
       connection:  CONNECTION,
-      concurrency: CONCURRENCY,
+      concurrency: RESOLUTION_CONCURRENCY,
       stalledInterval: 30_000,
     },
   );

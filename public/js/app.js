@@ -2,6 +2,7 @@
 import { wallet } from './wallet.js';
 import { mountWalletButton } from './wallet-menu.js';
 import { enhanceSelects, closePopover } from './ui.js';
+import { refreshSession } from './session.js';
 import { formatUsdc } from './utils.js';
 import { renderOverview }     from './pages/overview.js';
 import { renderMarkets }      from './pages/markets.js';
@@ -104,6 +105,8 @@ async function refreshBalance() {
 }
 wallet.onUpdate(refreshBalance);
 setInterval(refreshBalance, 30000);
+wallet.ready().then(refreshBalance);
+refreshSession();
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 if (parseHash()) route();

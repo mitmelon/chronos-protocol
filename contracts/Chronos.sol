@@ -15,6 +15,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///   - closeTrading     (permissionless time transition, not fund entry)
 ///   - markRefundable   (oracle-miss emergency exit — MUST remain open)
 ///   - claimWinnings    (winners must always be able to withdraw)
+///   - claimWinningsFor / claimRefundFor / claimBatch (push payouts to participants; funds only ever go to the participant)
 ///   - claimRefund      (oracle-miss refund — MUST remain open)
 ///   - withdrawFees     (treasury pull — decoupled from user claims)
 ///   - sweepUnclaimed   (owner emergency — must remain open)
@@ -73,6 +74,7 @@ contract Chronos is Ownable2Step, Pausable, ReentrancyGuard {
     error GracePeriodNotElapsed();
     error RenounceOwnershipDisabled();
     error InsufficientUSDCReserves();
+    error InvalidBatch();
 
     event MarketCreated(
         uint256 indexed marketId,
@@ -93,6 +95,7 @@ contract Chronos is Ownable2Step, Pausable, ReentrancyGuard {
         uint256 profit,
         uint256 fee
     );
+    event BatchClaimed(uint256 indexed marketId, address indexed caller, uint256 attempted, uint256 paid);
     event FeePaid(uint256 indexed marketId, address treasury, uint256 amount);
     event FeesWithdrawn(address treasury, uint256 amount);
     event RefundClaimed(uint256 indexed marketId, address indexed claimant, uint256 amount);
@@ -102,6 +105,9 @@ contract Chronos is Ownable2Step, Pausable, ReentrancyGuard {
     event FeeUpdated(uint256 oldBps, uint256 newBps);
     event GracePeriodUpdated(uint256 oldPeriod, uint256 newPeriod);
     event TokensRescued(address token, address to, uint256 amount);
+
+    /// @notice Upper bound for claimBatch so a single transaction always fits in a block.
+    uint256 public constant MAX_BATCH = 100;
 
     uint256 public marketCount;
     mapping(uint256 => Market) public markets;
@@ -249,31 +255,73 @@ contract Chronos is Ownable2Step, Pausable, ReentrancyGuard {
         emit MarketRefundable(marketId);
     }
 
+    /// @notice Winner claims their own payout.
     function claimWinnings(uint256 marketId) external nonReentrant marketExists(marketId) {
+        _claimWinnings(marketId, msg.sender);
+    }
+
+    /// @notice Anyone (typically the Chronos agent) can push a winner's payout. Funds ALWAYS go to `user`,
+    /// never to the caller, so this is safe to leave permissionless.
+    function claimWinningsFor(uint256 marketId, address user) external nonReentrant marketExists(marketId) {
+        _claimWinnings(marketId, user);
+    }
+
+    /// @notice Participant claims their own refund.
+    function claimRefund(uint256 marketId) external nonReentrant marketExists(marketId) {
+        _claimRefund(marketId, msg.sender);
+    }
+
+    /// @notice Anyone can push a participant's refund. Funds ALWAYS go to `user`.
+    function claimRefundFor(uint256 marketId, address user) external nonReentrant marketExists(marketId) {
+        _claimRefund(marketId, user);
+    }
+
+    /// @notice Pay many participants in one transaction. Works for Resolved (winnings) and Refundable (refunds) markets.
+    /// A participant who cannot be paid (already claimed, lost, no shares, or a token transfer that reverts for
+    /// that address) is skipped; it never blocks the others. Returns how many were paid.
+    /// @dev Deliberately NOT nonReentrant itself: each per-user call is, and is isolated by try/catch.
+    function claimBatch(uint256 marketId, address[] calldata users) external marketExists(marketId) returns (uint256 paid) {
+        uint256 n = users.length;
+        if (n == 0 || n > MAX_BATCH) revert InvalidBatch();
+
+        MarketState st = markets[marketId].state;
+        if (st != MarketState.Resolved && st != MarketState.Refundable) {
+            revert InvalidMarketState(uint8(st), uint8(MarketState.Resolved));
+        }
+        bool refund = st == MarketState.Refundable;
+
+        for (uint256 i = 0; i < n; ++i) {
+            if (refund) {
+                try this.claimRefundFor(marketId, users[i]) {
+                    ++paid;
+                } catch {}
+            } else {
+                try this.claimWinningsFor(marketId, users[i]) {
+                    ++paid;
+                } catch {}
+            }
+        }
+
+        emit BatchClaimed(marketId, msg.sender, n, paid);
+    }
+
+    function _claimWinnings(uint256 marketId, address user) internal {
         Market storage m = markets[marketId];
 
         if (m.state != MarketState.Resolved) revert InvalidMarketState(uint8(m.state), uint8(MarketState.Resolved));
-        if (claimed[marketId][msg.sender]) revert AlreadyClaimed();
+        if (claimed[marketId][user]) revert AlreadyClaimed();
         if (m.outcome == Outcome.UNRESOLVED) revert InvalidOutcome();
 
-        uint256 winnerShares = m.outcome == Outcome.YES ? yesShares[marketId][msg.sender] : noShares[marketId][msg.sender];
+        uint256 winnerShares = m.outcome == Outcome.YES ? yesShares[marketId][user] : noShares[marketId][user];
         if (winnerShares == 0) revert NoShares();
 
-        uint256 winningPool = m.outcome == Outcome.YES ? m.yesPool : m.noPool;
-
-        // Fee model (exact):
-        // grossPayout   = winnerShares * totalPool / winningPool
-        // originalStake = winnerShares
-        // profit        = grossPayout - winnerShares
-        // fee           = profit * feeBps / 10_000
-        // netPayout     = grossPayout - fee
-        uint256 grossPayout = (winnerShares * m.totalPool) / winningPool;
-        uint256 profit = grossPayout - winnerShares;
-        uint256 fee = (profit * m.feeBps) / 10_000;
-        uint256 netPayout = grossPayout - fee;
+        // Fee model (exact), see _payoutFor:
+        // grossPayout = winnerShares * totalPool / winningPool; profit = grossPayout - winnerShares;
+        // fee = profit * feeBps / 10_000; netPayout = grossPayout - fee
+        (uint256 netPayout, uint256 fee, uint256 profit) = _payoutFor(m, winnerShares);
 
         // CEI before transfers.
-        claimed[marketId][msg.sender] = true;
+        claimed[marketId][user] = true;
         m.settledAmount += (netPayout + fee);
 
         if (fee > 0) {
@@ -281,28 +329,39 @@ contract Chronos is Ownable2Step, Pausable, ReentrancyGuard {
             emit FeePaid(marketId, treasury, fee);
         }
 
-        usdc.safeTransfer(msg.sender, netPayout);
+        usdc.safeTransfer(user, netPayout);
 
-        emit WinningsClaimed(marketId, msg.sender, netPayout, winnerShares, profit, fee);
+        emit WinningsClaimed(marketId, user, netPayout, winnerShares, profit, fee);
     }
 
-    function claimRefund(uint256 marketId) external nonReentrant marketExists(marketId) {
+    function _payoutFor(
+        Market storage m,
+        uint256 winnerShares
+    ) private view returns (uint256 netPayout, uint256 fee, uint256 profit) {
+        uint256 winningPool = m.outcome == Outcome.YES ? m.yesPool : m.noPool;
+        uint256 grossPayout = (winnerShares * m.totalPool) / winningPool;
+        profit = grossPayout - winnerShares;
+        fee = (profit * m.feeBps) / 10_000;
+        netPayout = grossPayout - fee;
+    }
+
+    function _claimRefund(uint256 marketId, address user) internal {
         Market storage m = markets[marketId];
 
         if (m.state != MarketState.Refundable) {
             revert InvalidMarketState(uint8(m.state), uint8(MarketState.Refundable));
         }
-        if (claimed[marketId][msg.sender]) revert AlreadyClaimed();
+        if (claimed[marketId][user]) revert AlreadyClaimed();
 
-        uint256 amount = yesShares[marketId][msg.sender] + noShares[marketId][msg.sender];
+        uint256 amount = yesShares[marketId][user] + noShares[marketId][user];
         if (amount == 0) revert NoShares();
 
         // CEI before transfer.
-        claimed[marketId][msg.sender] = true;
+        claimed[marketId][user] = true;
 
-        usdc.safeTransfer(msg.sender, amount);
+        usdc.safeTransfer(user, amount);
 
-        emit RefundClaimed(marketId, msg.sender, amount);
+        emit RefundClaimed(marketId, user, amount);
     }
 
     function sweepUnclaimed(uint256 marketId) external onlyOwner nonReentrant marketExists(marketId) {

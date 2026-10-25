@@ -3,6 +3,9 @@ import { api } from '../api.js';
 import { wallet } from '../wallet.js';
 import { esc, formatUsdc, formatDate, formatDateTime, countdown, poolPercent, statusPill, outcomeTag, splitBar, emptyState, explorerTxUrl, showToast } from '../utils.js';
 import { icon, onWallet } from '../ui.js';
+import { connectWallet, requireSignIn } from '../login.js';
+import { resolveApi, session } from '../session.js';
+import { timeAgo } from '../utils.js';
 
 export async function renderMarketDetail(view, { id, trade }) {
   view.innerHTML = `
@@ -50,10 +53,13 @@ export async function renderMarketDetail(view, { id, trade }) {
         </section>
       </div>
 
+      <section class="card card-pad" id="resolve-card" hidden aria-live="polite"></section>
+
       ${evidence(ev)}
     </div>`;
 
   wireTrade(view, m, !!trade);
+  wireResolve(view, m);
 }
 
 function tradePanel(m) {
@@ -69,10 +75,10 @@ function tradePanel(m) {
     <button class="btn btn-primary btn-lg btn-block" id="submit" style="margin-top:16px">Connect wallet</button>
     <div id="tx-status" class="tx-status" aria-live="polite"></div>`;
   if (m.state === 'Resolved') return `
-    <p style="margin:12px 0 16px;color:var(--ink-2)">This market resolved ${m.outcome === 'YES' ? 'Yes' : 'No'}. If you held that side, your payout is ready.</p>
+    <p style="margin:12px 0 16px;color:var(--ink-2)">This market resolved ${m.outcome === 'YES' ? 'Yes' : 'No'}. Winners are paid automatically. If your payout hasn’t arrived yet, you can claim it yourself.</p>
     <button class="btn btn-primary btn-block" id="claim-win">Claim winnings</button><div id="tx-status" class="tx-status" aria-live="polite"></div>`;
   if (m.state === 'Refundable') return `
-    <p style="margin:12px 0 16px;color:var(--ink-2)">The oracle missed its deadline, so every stake is refunded in full.</p>
+    <p style="margin:12px 0 16px;color:var(--ink-2)">The market was cancelled, so every stake is refunded in full and sent back automatically. If yours hasn’t arrived yet, you can claim it yourself.</p>
     <button class="btn btn-primary btn-block" id="claim-refund">Claim refund</button><div id="tx-status" class="tx-status" aria-live="polite"></div>`;
   return `<p style="margin-top:12px;color:var(--muted)">Trading is closed. The oracle will resolve this market after the deadline.</p>`;
 }
@@ -104,7 +110,7 @@ function wireTrade(view, m, focusAmount) {
     const btn = $(btnSel);
     if (!btn) return;
     btn.addEventListener('click', async () => {
-      if (!wallet.connected) { wallet.connect(); return; }
+      if (!wallet.connected || !wallet.onRightChain) { await connectWallet(); if (!wallet.connected || !wallet.onRightChain) return; }
       btn.disabled = true; btn.textContent = doing;
       try { const tx = await fn(m.marketId); showToast(done, 'success'); status.innerHTML = link(done + '.', tx); btn.textContent = 'Done'; }
       catch (err) { showToast(`${label} failed: ${err.message}`, 'error'); btn.disabled = false; btn.textContent = label; }
@@ -148,22 +154,23 @@ function wireTrade(view, m, focusAmount) {
 
     submit.disabled = false;
     if (!wallet.connected) submit.textContent = 'Connect wallet';
-    else if (!wallet.onRightChain) submit.textContent = 'Switch to Arc Testnet';
+    else if (!wallet.onRightChain) submit.textContent = `Switch to ${wallet.networkName}`;
     else if (!side) { submit.textContent = 'Choose Yes or No'; submit.disabled = true; }
     else if (!(amount >= 0.1)) { submit.textContent = 'Enter at least 0.10 USDC'; submit.disabled = true; }
     else submit.textContent = `Buy ${side === 1 ? 'Yes' : 'No'} for ${amount} USDC`;
   }
 
   submit.addEventListener('click', async () => {
-    if (!wallet.connected) { wallet.connect(); return; }
-    if (!wallet.onRightChain) { wallet.switchToArc(); return; }
+    if (!wallet.connected || !wallet.onRightChain) { await connectWallet(); if (!wallet.connected || !wallet.onRightChain) return; }
     const amount = parseFloat(amountEl.value || '0');
     if (!side || !(amount >= 0.1)) return;
     const micro = BigInt(Math.floor(amount * 1e6));
-    busy = true; submit.disabled = true; submit.textContent = 'Approving USDC…'; status.textContent = '';
+    busy = true; submit.disabled = true; submit.textContent = 'Confirm in your wallet…'; status.textContent = '';
     try {
-      const approveTx = await wallet.approveUsdc(micro);
-      status.innerHTML = link('USDC approved.', approveTx);
+      if (BigInt(await wallet.allowance()) < micro) {
+        const approveTx = await wallet.approveUsdc(micro);
+        status.innerHTML = link('USDC approved.', approveTx);
+      }
       submit.textContent = 'Submitting position…';
       const tx = await wallet.buyShares(m.marketId, side, micro);
       showToast('Position placed', 'success');
@@ -178,4 +185,82 @@ function wireTrade(view, m, focusAmount) {
 
   onWallet(view, refresh);
   refresh();
+}
+
+// ── Resolve panel ────────────────────────────────────────────────────────────
+const JOB_TEXT = {
+  queued: 'Queued. The oracle will start in a moment.',
+  running: 'The oracle is researching the result and checking sources.',
+  deferred: 'The official result is not confirmed yet.',
+  unresolved: 'The oracle could not verify the result with enough confidence yet.',
+  failed: 'The last attempt hit an error and will be retried.',
+  gave_up: 'Automatic attempts are finished. The market refunds at its resolution deadline.',
+};
+
+async function wireResolve(view, m) {
+  const card = view.querySelector('#resolve-card');
+  if (!card || (m.state !== 'Open' && m.state !== 'TradingClosed')) return;
+  let timer, polls = 0, stopped = false;
+  const alive = () => !stopped && view.isConnected;
+
+  async function load() {
+    try { return await resolveApi.status(m.marketId); } catch { return null; }
+  }
+
+  function paint(info, note) {
+    if (!info) { card.hidden = true; return; }
+    if (['Resolved', 'Refundable', 'Settled'].includes(info.state)) { card.hidden = true; return; }
+    const job = info.job;
+    const working = job && (job.status === 'queued' || job.status === 'running');
+    card.hidden = false;
+
+    let body, button = '';
+    if (!info.eligible) {
+      body = `<div class="resolve-state"><span class="status status-closed"><i></i></span><span>${info.reason ? esc(info.reason) + '. ' : ''}The oracle checks automatically${info.dueAt ? ` from <strong>${esc(new Date(info.dueAt).toUTCString())}</strong>` : ' once the event is over'}. This button unlocks then.</span></div>`;
+    } else if (working) {
+      body = `<div class="resolve-state"><span class="spin" aria-hidden="true"></span><span>${esc(JOB_TEXT[job.status])}</span></div>`;
+    } else {
+      const last = job && JOB_TEXT[job.status] ? `${JOB_TEXT[job.status]}${job.reason ? ' ' + esc(job.reason) : ''} Last checked ${timeAgo(job.updatedAt)}.` : '';
+      const next = info.nextAttemptAt ? ` The oracle will try again automatically ${new Date(info.nextAttemptAt) > new Date() ? 'around ' + esc(new Date(info.nextAttemptAt).toUTCString()) : 'shortly'}.` : '';
+      body = `<p class="resolve-state" style="margin:0">${info.pastDeadline ? 'The resolution deadline has passed. If no verified result exists, the market is cancelled and everyone is refunded.' : 'The event is over. The oracle researches the result, cites its sources and settles the market on-chain. A market can only be resolved once.'}</p>
+        ${last || next ? `<p class="hint" style="margin-top:10px">${last}${next}</p>` : ''}`;
+      button = `<button class="btn btn-primary" id="resolve-btn" style="margin-top:16px">${info.pastDeadline ? 'Settle market' : 'Resolve with oracle'}</button>
+        <span class="hint" style="margin-left:10px">${session.user ? '' : 'You will be asked to sign in first.'}</span>`;
+    }
+    card.innerHTML = `<h2 class="section-title">Resolution</h2><div class="resolve-box" style="margin-top:12px">${body}${note ? `<p class="hint" style="margin-top:10px;font-weight:500;color:var(--ink)">${esc(note)}</p>` : ''}${button}</div>`;
+    card.querySelector('#resolve-btn')?.addEventListener('click', start);
+  }
+
+  async function poll() {
+    if (!alive()) return;
+    const info = await load();
+    if (!alive()) return;
+    paint(info);
+    if (!info) return;
+    if (['Resolved', 'Refundable', 'Settled'].includes(info.state)) { showToast(info.state === 'Resolved' ? `Resolved: ${info.outcome}` : 'Market settled', 'success'); window.chronosRouter('market', { id: m.marketId }); return; }
+    const job = info.job;
+    if (job && (job.status === 'queued' || job.status === 'running') && ++polls < 75) timer = setTimeout(poll, 4000);
+  }
+
+  async function start() {
+    const btn = card.querySelector('#resolve-btn');
+    if (!(await requireSignIn())) return;
+    btn.disabled = true; btn.textContent = 'Starting…';
+    try {
+      const r = await resolveApi.start(m.marketId);
+      if (r.status === 'already_final') { window.chronosRouter('market', { id: m.marketId }); return; }
+      polls = 0; clearTimeout(timer); timer = setTimeout(poll, 1500);
+      paint({ ...(await load()), job: { status: 'queued' } }, r.message);
+    } catch (err) {
+      if (err.status === 401) { showToast('Please sign in to resolve.', 'error'); }
+      else paint(await load(), err.message);
+      if (err.status !== 409 && err.status !== 429) showToast(err.message, 'error');
+    }
+  }
+
+  paint(await load());
+  const info = card.hidden ? null : await load();
+  if (info?.job && (info.job.status === 'queued' || info.job.status === 'running')) timer = setTimeout(poll, 3000);
+  const stop = new MutationObserver(() => { if (!view.isConnected) { stopped = true; clearTimeout(timer); stop.disconnect(); } });
+  stop.observe(document.body, { childList: true, subtree: true });
 }

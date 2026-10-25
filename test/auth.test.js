@@ -1,0 +1,23 @@
+'use strict';
+process.env.SESSION_SECRET = 'x'.repeat(40);
+const assert = require('assert');
+const { privateKeyToAccount, generatePrivateKey } = require('viem/accounts');
+const { fakeDb } = require('./harness');
+const s = require('../src/auth/session');
+(async () => {
+  const db = fakeDb(); const acct = privateKeyToAccount(generatePrivateKey());
+  const { message, nonce } = await s.createChallenge(db, { address: acct.address, domain: 'chronos.test', uri: 'https://chronos.test' });
+  assert.ok(message.includes('chronos.test') && message.includes(`Nonce: ${nonce}`) && /Chain ID: \d+/.test(message));
+  const signature = await acct.signMessage({ message });
+  assert.strictEqual(await s.verifyChallenge(db, { address: acct.address, signature, nonce }), acct.address.toLowerCase());
+  console.log('PASS valid signature logs in');
+  await assert.rejects(s.verifyChallenge(db, { address: acct.address, signature, nonce }), /expired|Try again/); console.log('PASS nonce is single-use (replay blocked)');
+  const c2 = await s.createChallenge(db, { address: acct.address, domain: 'chronos.test', uri: 'https://chronos.test' });
+  const other = privateKeyToAccount(generatePrivateKey());
+  await assert.rejects(s.verifyChallenge(db, { address: acct.address, signature: await other.signMessage({ message: c2.message }), nonce: c2.nonce }), /did not match/); console.log('PASS signature from a different wallet is rejected');
+  const tok = s.issueToken(acct.address);
+  assert.strictEqual(s.readToken(tok).address, acct.address.toLowerCase()); console.log('PASS session token round-trips');
+  const [p, sig] = tok.split('.'); assert.strictEqual(s.readToken(`${p}.${sig.slice(0, -2)}xx`), null); assert.strictEqual(s.readToken(tok, Date.now() + 8 * 864e5), null); console.log('PASS tampered and expired tokens are rejected');
+  assert.strictEqual(s.parseCookies('a=1; chronos_session=' + encodeURIComponent(tok)).chronos_session, tok); console.log('PASS cookie parsing');
+  process.exit(0);
+})().catch((e) => { console.error('FAIL', e); process.exit(1); });

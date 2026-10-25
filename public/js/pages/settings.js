@@ -3,8 +3,10 @@ import { api } from '../api.js';
 import { wallet } from '../wallet.js';
 import { esc, shortAddr, formatUsdc, explorerAddrUrl } from '../utils.js';
 import { icon, onWallet } from '../ui.js';
+import { openConnect } from '../login.js';
+import { session, signOut } from '../session.js';
 
-const USDC = () => window.CHRONOS_USDC || '0x3600000000000000000000000000000000000000';
+const USDC = () => wallet.usdc || window.CHRONOS_USDC || '';
 
 export async function renderSettings(view) {
   const contract = window.CHRONOS_CONTRACT;
@@ -14,13 +16,13 @@ export async function renderSettings(view) {
     <div class="page">
       <div class="page-head"><div><h1>Settings</h1><p>Wallet, network and protocol configuration.</p></div></div>
       <div class="cols">
-        <section class="card card-pad"><h2 class="section-title">Wallet</h2><div id="wallet" style="margin-top:14px"></div></section>
+        <section class="card card-pad"><h2 class="section-title">Account</h2><div id="wallet" style="margin-top:14px"></div></section>
         <section class="card card-pad"><h2 class="section-title">Protocol</h2><div id="protocol" style="margin-top:14px"><div class="skeleton" style="height:120px"></div></div></section>
         <section class="card card-pad">
           <h2 class="section-title">Network</h2>
           <dl class="kv" style="margin-top:14px">
-            <div><dt>Chain</dt><dd>${esc(window.CHRONOS_NETWORK || 'Arc Testnet')}</dd></div>
-            <div><dt>Chain ID</dt><dd class="num">${esc(window.CHRONOS_CHAIN_ID || '5042002')}</dd></div>
+            <div><dt>Chain</dt><dd>${esc(wallet.networkName)}</dd></div>
+            <div><dt>Chain ID</dt><dd class="num">${esc(wallet.chain?.id || window.CHRONOS_CHAIN_ID || '')}</dd></div>
             <div><dt>USDC</dt><dd class="mono">${esc(USDC())}</dd></div>
             <div><dt>Contract</dt><dd class="mono">${contract ? esc(contract) : 'Not deployed yet'}</dd></div>
           </dl>
@@ -41,23 +43,34 @@ export async function renderSettings(view) {
 
   async function drawWallet() {
     if (!wallet.connected) {
-      box.innerHTML = `<p class="hint" style="margin:0 0 14px">No wallet connected.</p><button class="btn btn-primary" id="connect">Connect wallet</button>`;
-      box.querySelector('#connect').addEventListener('click', () => wallet.connect());
+      box.innerHTML = `<p class="hint" style="margin:0 0 14px">Connect a wallet to trade and sign in.</p><button class="btn btn-primary" id="connect">Connect wallet</button>`;
+      box.querySelector('#connect').addEventListener('click', () => openConnect({ mode: 'connect' }));
       return;
     }
+    const signed = !!session.user;
     box.innerHTML = `
       <dl class="kv">
         <div><dt>Address</dt><dd class="mono">${esc(wallet.account)}</dd></div>
-        <div><dt>Network</dt><dd>${wallet.onRightChain ? 'Arc Testnet' : 'Wrong network'}</dd></div>
+        <div><dt>Wallet</dt><dd>${esc(wallet.providerInfo?.name || 'Browser wallet')}</dd></div>
+        <div><dt>Network</dt><dd>${wallet.onRightChain ? esc(wallet.networkName) : 'Wrong network'}</dd></div>
+        <div><dt>Session</dt><dd>${signed ? 'Signed in' : 'Not signed in'}</dd></div>
         <div><dt>USDC balance</dt><dd class="num" id="bal">…</dd></div>
       </dl>
-      ${wallet.onRightChain ? '' : '<button class="btn btn-primary btn-sm" id="switch" style="margin-top:16px">Switch to Arc Testnet</button>'}`;
-    box.querySelector('#switch')?.addEventListener('click', () => wallet.switchToArc());
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+        ${wallet.onRightChain ? '' : `<button class="btn btn-primary btn-sm" id="switch">Switch to ${esc(wallet.networkName)}</button>`}
+        ${signed ? '<button class="btn btn-secondary btn-sm" id="signout">Sign out</button>' : '<button class="btn btn-primary btn-sm" id="signin">Sign in</button>'}
+        <button class="btn btn-quiet btn-sm" id="disconnect">Disconnect</button>
+      </div>`;
+    box.querySelector('#switch')?.addEventListener('click', () => wallet.switchChain().catch(() => {}));
+    box.querySelector('#signin')?.addEventListener('click', () => openConnect({ mode: 'signin' }));
+    box.querySelector('#signout')?.addEventListener('click', () => signOut());
+    box.querySelector('#disconnect')?.addEventListener('click', async () => { await signOut(); await wallet.disconnect(); });
     try { const b = await wallet.usdcBalance(); const el = box.querySelector('#bal'); if (el) el.textContent = `${formatUsdc(b)} USDC`; }
     catch { const el = box.querySelector('#bal'); if (el) el.textContent = '—'; }
   }
   drawWallet();
   onWallet(view, drawWallet);
+  const offSession = session.onUpdate(() => { if (view.isConnected) drawWallet(); else offSession(); });
 
   try {
     const s = await api.publicSettings();

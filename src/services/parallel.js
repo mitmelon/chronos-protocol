@@ -1,125 +1,83 @@
 'use strict';
+/**
+ * src/services/parallel.js
+ *
+ * Thin client for Parallel's v1 Search and Extract APIs. It makes NO decisions: no query lists,
+ * no event selection, no filtering by topic. The Gemini agent decides what to search and read;
+ * these functions are the tools it calls (see src/agent/tools.js).
+ *
+ * Docs: POST /v1/search (x-api-key), POST /v1/extract (x-api-key).
+ */
 
 const config = require('../config');
+const { withTimeout, retry } = require('../agent/lib');
 
-const PARALLEL_API_BASE = 'https://api.parallel.ai/v1';
+class ParallelError extends Error {
+  constructor(message, status) { super(message); this.name = 'ParallelError'; this.status = status; }
+}
+
+const transient = (err) => !err.status || [408, 425, 429, 500, 502, 503, 504].includes(err.status);
+
+async function post(path, body, { timeoutMs = 45000 } = {}) {
+  if (!config.parallel.apiKey) throw new ParallelError('PARALLEL_API_KEY not configured');
+  return retry(async () => {
+    const res = await withTimeout(
+      fetch(`${config.parallel.baseUrl}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': config.parallel.apiKey },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      }),
+      timeoutMs + 2000, `Parallel ${path}`
+    );
+    if (!res.ok) {
+      const text = (await res.text().catch(() => '')).slice(0, 400);
+      throw new ParallelError(`Parallel ${path} failed (${res.status}): ${text}`, res.status);
+    }
+    return res.json();
+  }, { tries: 3, baseMs: 1500, label: `parallel${path}`, shouldRetry: transient });
+}
 
 /**
- * Retry a fetch-based async call with exponential backoff + jitter.
- * Retries on: 429 (rate limit), 503/502/504 (server errors), 408 (timeout).
+ * Web search. `afterDate` (YYYY-MM-DD) limits to content published on or after that date.
+ * Returns [{ url, title, publishDate, excerpts: [string] }] ordered by relevance.
  */
-async function withRetry(fn, { maxAttempts = 5, baseDelayMs = 2000, maxDelayMs = 60000, label = 'call' } = {}) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const isRetryable = err._retryable === true;
-      if (!isRetryable || attempt === maxAttempts) throw err;
-      const raw   = baseDelayMs * Math.pow(2, attempt - 1);
-      const jitter = raw * 0.2 * (Math.random() * 2 - 1);
-      const delay  = Math.min(Math.round(raw + jitter), maxDelayMs);
-      console.warn(`[parallel] ${label} attempt ${attempt}/${maxAttempts} failed (${err.message}). Retrying in ${Math.round(delay / 1000)}s…`);
-      await new Promise(r => setTimeout(r, delay));
-    }
-  }
+async function search({ objective, queries, afterDate, includeDomains, maxResults = 8, mode = 'advanced', maxCharsPerResult = 1800 }) {
+  const search_queries = (queries || []).map((q) => String(q).trim()).filter(Boolean).slice(0, 5);
+  if (!search_queries.length) throw new ParallelError('At least one search query is required');
+
+  const advanced_settings = { max_results: Math.min(Math.max(maxResults, 1), 10), excerpt_settings: { max_chars_per_result: maxCharsPerResult } };
+  const source_policy = {};
+  if (afterDate && /^\d{4}-\d{2}-\d{2}$/.test(afterDate)) source_policy.after_date = afterDate;
+  if (Array.isArray(includeDomains) && includeDomains.length) source_policy.include_domains = includeDomains.slice(0, 20);
+  if (Object.keys(source_policy).length) advanced_settings.source_policy = source_policy;
+
+  const data = await post('/v1/search', { objective: objective || undefined, search_queries, mode, client_model: config.gemini.model, advanced_settings });
+  return (data.results || []).map((r) => ({
+    url: r.url,
+    title: r.title || '',
+    publishDate: r.publish_date || null,
+    excerpts: Array.isArray(r.excerpts) ? r.excerpts : [],
+  }));
 }
 
-async function searchEvents(query) {
-  if (!config.parallel.apiKey) {
-    console.warn('[parallel] PARALLEL_API_KEY not configured — returning empty results');
-    return [];
-  }
-
-  return withRetry(async () => {
-    const res = await fetch(`${PARALLEL_API_BASE}/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.parallel.apiKey}`,
-      },
-      // Parallel AI v1 API only accepts search_queries array — no num_results or category
-      body: JSON.stringify({ search_queries: [query] }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      const err = new Error(`Parallel Search API error ${res.status}: ${text}`);
-      err._retryable = [429, 500, 502, 503, 504, 408].includes(res.status);
-      throw err;
-    }
-
-    const data = await res.json();
-
-    // Response may be: { results: [...] } OR { results: { [query]: [...] } }
-    let rawResults = [];
-    if (Array.isArray(data.results)) {
-      rawResults = data.results;
-    } else if (data.results && typeof data.results === 'object') {
-      rawResults = Object.values(data.results).flat();
-    }
-
-    return rawResults.map(r => ({
-      title:       r.title       || '',
-      url:         r.url         || r.link || '',
-      snippet:     r.snippet     || r.description || r.summary || '',
-      publishedAt: r.published_at || r.date || r.publishedAt || null,
-      source:      r.source      || (() => { try { return new URL(r.url || r.link || 'http://example.com').hostname; } catch { return 'unknown'; } })(),
-      score:       r.score       || r.relevance_score || 0,
-    }));
-  }, { maxAttempts: 5, baseDelayMs: 2000, maxDelayMs: 60000, label: `search "${query.slice(0, 40)}"` });
+/**
+ * Read specific pages. Returns { pages: [{ url, title, excerpts, fullContent }], errors: [{ url, error }] }.
+ * `fullContent` is what the evidence hash is computed from.
+ */
+async function extract({ urls, objective, maxChars = 20000 }) {
+  const list = (urls || []).filter((u) => /^https?:\/\//i.test(u)).slice(0, 5);
+  if (!list.length) throw new ParallelError('At least one http(s) URL is required');
+  const data = await post('/v1/extract', {
+    urls: list,
+    objective: objective || undefined,
+    client_model: config.gemini.model,
+    advanced_settings: { full_content: true },
+  }, { timeoutMs: 60000 });
+  return {
+    pages: (data.results || []).map((r) => ({ url: r.url, title: r.title || '', excerpts: r.excerpts || [], fullContent: String(r.full_content || '').slice(0, maxChars) })),
+    errors: (data.errors || []).map((e) => ({ url: e.url, error: e.content || e.error_type || 'fetch error' })),
+  };
 }
 
-async function discoverFutureEvents() {
-  const queries = [
-    'upcoming economic data release schedule next 30 days',
-    'scheduled political events elections decisions next 60 days',
-    'technology product launch announcement expected 2026',
-    'sports championship tournament finals upcoming',
-    'central bank interest rate decision upcoming meeting',
-    'regulatory decision ruling expected upcoming',
-  ];
-
-  const allResults = [];
-  for (const query of queries) {
-    try {
-      const results = await searchEvents(query);
-      allResults.push(...results.map(r => ({ ...r, searchQuery: query })));
-    } catch (err) {
-      console.warn(`[parallel] Search failed for "${query}" (exhausted retries): ${err.message}`);
-      // Continue with remaining queries — don't abort the whole discovery run
-    }
-  }
-
-  // Deduplicate by URL
-  const seen = new Set();
-  return allResults.filter(r => {
-    if (!r.url || seen.has(r.url)) return false;
-    seen.add(r.url);
-    return true;
-  });
-}
-
-async function fetchEvidence(question, authoritySource) {
-  const queries = [
-    question,
-    `${question} result outcome confirmed`,
-    authoritySource ? `site:${new URL(authoritySource).hostname} ${question}` : question,
-  ];
-
-  const allResults = [];
-  for (const query of queries) {
-    try {
-      const results = await searchEvents(query);
-      allResults.push(...results);
-    } catch (err) {
-      console.warn(`[parallel] Evidence search failed (exhausted retries): ${err.message}`);
-    }
-  }
-
-  const seen = new Set();
-  return allResults
-    .filter(r => { if (seen.has(r.url)) return false; seen.add(r.url); return true; })
-    .slice(0, 7);
-}
-
-module.exports = { searchEvents, discoverFutureEvents, fetchEvidence };
+module.exports = { search, extract, ParallelError };

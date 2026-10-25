@@ -24,6 +24,8 @@ const positionRoutes   = require('./routes/positions');
 const resolutionRoutes = require('./routes/resolutions');
 const agentRoutes      = require('./routes/agent');
 const settingsRoutes   = require('./routes/settings');
+const authRoutes       = require('./routes/auth');
+const resolveRoutes    = require('./routes/resolve');
 const rateLimitConfig  = require('./middleware/rateLimit');
 
 /**
@@ -43,7 +45,11 @@ function publicViewData() {
 }
 
 async function buildServer() {
+  // Refuse to start with unsafe settings (missing SESSION_SECRET on mainnet/production, default worker secret, ...)
+  config.validate();
+
   const fastify = Fastify({
+    trustProxy: config.trustProxy,
     logger: {
       level: process.env.LOG_LEVEL || 'info',
       transport: process.env.NODE_ENV !== 'production'
@@ -75,6 +81,7 @@ async function buildServer() {
     origin:         config.corsOrigins,
     methods:        ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials:    true, // session cookie
   });
 
   // ── Rate limiting ──────────────────────────────────────────────────────────
@@ -87,6 +94,8 @@ async function buildServer() {
   await fastify.register(resolutionRoutes);
   await fastify.register(agentRoutes);
   await fastify.register(settingsRoutes);
+  await fastify.register(authRoutes);     // /api/chain, /api/auth/*
+  await fastify.register(resolveRoutes);  // POST /api/markets/:id/resolve, GET /api/markets/:id/resolution
 
   // ── Error handler ──────────────────────────────────────────────────────────
   fastify.setErrorHandler(async (err, _req, reply) => {

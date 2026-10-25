@@ -21,8 +21,13 @@ const { connect }            = require('./src/db/client');
 const { ensureIndexes }      = require('./src/db/indexes');
 const { startWorkers }       = require('./src/queues/workers');
 const { scheduleRepeatJobs } = require('./src/queues/scheduler');
+const config                = require('./src/config');
 
 async function main() {
+  // The worker signs transactions: refuse to start without the oracle key or with unsafe mainnet/production settings.
+  config.validate({ requireOracleKey: true });
+  console.log(`[worker] Network: ${config.arc.networkName} (chain ${config.arc.chainId}, ${config.arc.network})`);
+
   console.log('[worker] Connecting to MongoDB...');
   await connect();
   await ensureIndexes();
@@ -38,10 +43,22 @@ async function main() {
 
 main().catch(err => { console.error('[worker] Fatal startup error:', err); process.exit(1); });
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('[worker] SIGTERM received — shutting down gracefully');
-  const { closeWorkers } = require('./src/queues/workers');
-  await closeWorkers();
+// A rejected promise must never silently kill a long-running oracle process.
+process.on('unhandledRejection', (err) => console.error('[worker] Unhandled rejection:', err));
+
+// Graceful shutdown: let in-flight agent runs and transactions finish
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[worker] ${signal} received — shutting down gracefully`);
+  try {
+    const { closeWorkers } = require('./src/queues/workers');
+    await closeWorkers();
+    const { close } = require('./src/db/client');
+    await close();
+  } catch (err) { console.error('[worker] Error during shutdown:', err.message); }
   process.exit(0);
-});
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

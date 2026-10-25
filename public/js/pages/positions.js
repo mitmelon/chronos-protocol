@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { wallet } from '../wallet.js';
 import { esc, shortAddr, formatUsdc, statusPill, outcomeTag, emptyState, buildPagination } from '../utils.js';
 import { icon, onWallet, wireClaimButtons } from '../ui.js';
+import { connectWallet } from '../login.js';
 
 export async function renderPositions(view) {
   onWallet(view, () => renderPositions(view));
@@ -18,7 +19,7 @@ export async function renderPositions(view) {
           <button class="btn btn-primary" id="connect">Connect wallet</button>
         </div></div>
       </div>`;
-    view.querySelector('#connect').addEventListener('click', () => wallet.connect());
+    view.querySelector('#connect').addEventListener('click', () => connectWallet());
     return;
   }
 
