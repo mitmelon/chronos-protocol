@@ -9,6 +9,7 @@
  * This file should never call listen() itself.
  */
 
+const fs      = require('fs');
 const path    = require('path');
 const Fastify = require('fastify');
 const cors    = require('@fastify/cors');
@@ -25,6 +26,7 @@ const resolutionRoutes = require('./routes/resolutions');
 const agentRoutes      = require('./routes/agent');
 const settingsRoutes   = require('./routes/settings');
 const authRoutes       = require('./routes/auth');
+const statsRoutes      = require('./routes/stats');
 const resolveRoutes    = require('./routes/resolve');
 const rateLimitConfig  = require('./middleware/rateLimit');
 
@@ -58,6 +60,11 @@ async function buildServer() {
     },
   });
 
+  const cssFile = path.join(__dirname, '..', 'public', 'css', 'build.css');
+  if (!fs.existsSync(cssFile)) {
+    console.warn('\n  [warn] public/css/build.css does not exist, so the site will load unstyled (404 on /assets/css/build.css).\n         Run `npm run build` once (or just `npm start`, which builds it for you).\n');
+  }
+
   // ── Static assets — served from /public via /assets/* ─────────────────────
   // root server.js is at project root; __dirname here is src/, so go up one.
   await fastify.register(statics, {
@@ -72,6 +79,9 @@ async function buildServer() {
     root:   path.join(__dirname, 'views'),
     layout: false,
   });
+
+  // Browsers ask for /favicon.ico before they read the page's <link rel=icon>
+  fastify.get('/favicon.ico', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/x-icon').send(fs.readFileSync(path.join(__dirname, '..', 'public', 'favicon.ico'))));
 
   // ── Landing + app shell ────────────────────────────────────────────────────
   fastify.get('/', async (_req, reply) => reply.view('index.ejs', publicViewData()));
@@ -94,6 +104,7 @@ async function buildServer() {
   await fastify.register(resolutionRoutes);
   await fastify.register(agentRoutes);
   await fastify.register(settingsRoutes);
+  await fastify.register(statsRoutes);    // /api/stats
   await fastify.register(authRoutes);     // /api/chain, /api/auth/*
   await fastify.register(resolveRoutes);  // POST /api/markets/:id/resolve, GET /api/markets/:id/resolution
 

@@ -391,3 +391,18 @@
   .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--ink); animation: spin .8s linear infinite; flex-shrink: 0; margin-top: 3px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 }
+
+/* ── Empty stake bar, position confirmation ─────────────────────────────── */
+@layer components {
+  .split-empty .split-track { background: var(--bg-muted); box-shadow: inset 0 0 0 1px var(--line); }
+  .split-empty .split-labels span:first-child { color: var(--muted); font-weight: 400; }
+  .big-ok { max-width: 480px; text-align: center; padding: 32px 28px 28px; }
+  .ok-badge { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 50%; background: var(--ink); color: #fff; box-shadow: 0 0 0 8px var(--bg-muted); }
+  .big-ok h2 { font-size: 24px; letter-spacing: -.02em; }
+  .ok-sub { margin: 6px 0 20px; color: var(--muted); font-size: 14px; }
+  .ok-id { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 18px; border: 1px dashed var(--line-strong); border-radius: 8px; background: var(--bg-subtle); }
+  .ok-id .k { width: 100%; font-size: 12px; color: var(--muted); }
+  .ok-id .mono { font-size: 22px; font-weight: 600; letter-spacing: .02em; }
+  .ok-kv { text-align: left; margin-bottom: 22px; }
+  .ok-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+}

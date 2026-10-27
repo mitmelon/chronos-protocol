@@ -36,3 +36,28 @@ that isn't fully paid. Running it twice is harmless.
 ## 4. Tests
     node test/agent.test.js && node test/auth.test.js && node test/payouts.test.js && node test/frontend.test.mjs   # npm i -D jsdom
     cd test/contract            # real-EVM contract tests: see test/contract/README.md
+
+## 5. Latest changes (read this if you applied an earlier zip)
+- **Redeploy the contract again**: `contracts/Chronos.sol` now also has `createMarkets` (several markets in ONE transaction). Compile with `viaIR: true`.
+- Approved questions are saved to the database as `pending` first and published on-chain from there; failures retry automatically (`src/agent/publish.js`).
+- The agent keeps trying to resolve until the deadline, makes one final bigger attempt before it, and refunds only as a last resort.
+- Gas: short on-chain text, 80-byte evidence hash pointer (full evidence at `GET /api/markets/:id/evidence.json`), no wasteful `closeTrading`, per-transaction cost cap.
+- Arc RPC: both official hostnames are tried automatically; testnet explorer is `testnet.arcscan.app`.
+- Tokens: client-side Gemini rate limit (`GEMINI_MAX_RPM`), waits the retry time the API asks for, shrinks old search results, caps proposals per run.
+- Worldwide discovery: each run explores different regions/themes; no website allowlist.
+- New scripts: `scripts/check-setup.js`, `scripts/estimate-costs.js`, `scripts/trigger.js`.
+- Tests (all run in seconds): `for t in agent persistence publish payouts misc auth; do node test/$t.test.js; done`
+
+## 6. Stakes, positions and stats (latest)
+Why positions weren't showing: nothing ever stored a stake. The keeper only copied market pools every 15 minutes, and
+"My positions" reads a `positions` collection that no code was filling. Now:
+- `src/services/indexer.js` records every stake and payout from the chain. The browser calls `POST /api/positions/record` the moment a
+  buy confirms (the server re-reads the chain itself), and the keeper's indexer catches everything else from a saved block cursor.
+- Each question's pools, volume, stakers and positions update immediately; positions are re-read from the chain, never computed.
+- New: `GET /api/stats` (TVL from the chain, total staked, resolved, paid to winners), `GET /api/positions/:address` now includes a
+  summary, and `GET /api/positions/:address/trades` lists every stake with its position ID.
+- A market with no stakes shows "No stakes yet" instead of 50%.
+- Wallet connection survives page reloads, even if the wallet loads late.
+- Favicon set added (`public/favicon.svg|ico`, PNGs) and wired into the page and `/favicon.ico`.
+- **Position ID**: the contract has no position ids, so the ID is `<marketId>-<first 8 hex of the transaction>`.
+- After updating, run `node scripts/trigger.js keeper` once so the indexer backfills older stakes (it starts near the oldest market).

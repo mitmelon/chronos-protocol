@@ -123,6 +123,34 @@ async function reverts(promise, name) {
   const ab = await bal(alice);
   await send(agent, chronos, CH.abi, 'claimBatch', [BigInt(m7), [alice.address]]);
   assert.ok((await bal(alice)) > ab); ok('payouts still work while the contract is paused (exits are never blocked)');
+
+  // ── createMarkets: a whole day's markets in ONE transaction ───────────────────────────────────────────────
+  {
+    await send(owner, chronos, CH.abi, 'unpause', []); // the earlier pause test leaves the contract paused
+    const t = await now(); const count0 = Number(await read(chronos, CH.abi, 'marketCount'));
+    const qs = ['Will A happen by Friday?', 'Will B happen by Friday?', 'Will C happen by Friday?'];
+    const cs = ['A criteria. Source: https://a.example', 'B criteria. Source: https://b.example', 'C criteria. Source: https://c.example'];
+    const td = [BigInt(t + 1000), BigInt(t + 2000), BigInt(t + 3000)], rd = [BigInt(t + 5000), BigInt(t + 6000), BigInt(t + 7000)];
+    const r = await send(oracle, chronos, CH.abi, 'createMarkets', [qs, cs, td, rd]);
+    assert.strictEqual(Number(await read(chronos, CH.abi, 'marketCount')), count0 + 3);
+    const created = r.logs.filter((l) => l.address.toLowerCase() === chronos.toLowerCase());
+    assert.strictEqual(created.length, 3);
+    for (let i = 0; i < 3; i++) { const mk = await read(chronos, CH.abi, 'getMarket', [BigInt(count0 + i)]); assert.strictEqual(mk.question, qs[i]); assert.strictEqual(mk.resolutionCriteria, cs[i]); assert.strictEqual(mk.tradingDeadline, td[i]); assert.strictEqual(mk.state, 0); assert.strictEqual(mk.creator.toLowerCase(), oracle.address.toLowerCase()); }
+    ok('createMarkets: 3 markets created in one transaction, sequential ids, all fields stored');
+    const single = await send(oracle, chronos, CH.abi, 'createMarket', [qs[0], cs[0], BigInt(t + 1000), BigInt(t + 5000)]);
+    console.log(`     gas: 3 markets in one tx = ${r.gasUsed}; one market alone = ${single.gasUsed} (3 separate = ${single.gasUsed * 3n})`);
+
+    const c1 = Number(await read(chronos, CH.abi, 'marketCount'));
+    await reverts(send(oracle, chronos, CH.abi, 'createMarkets', [qs, cs, [td[0], BigInt(t - 5), td[2]], rd]), 'InvalidDeadline');
+    assert.strictEqual(Number(await read(chronos, CH.abi, 'marketCount')), c1); ok('createMarkets: one invalid entry reverts the WHOLE batch (nothing half-created)');
+    await reverts(send(oracle, chronos, CH.abi, 'createMarkets', [qs, cs.slice(0, 2), td, rd]), 'InvalidBatch'); ok('createMarkets: mismatched array lengths rejected');
+    await reverts(send(oracle, chronos, CH.abi, 'createMarkets', [[], [], [], []]), 'InvalidBatch'); ok('createMarkets: empty batch rejected');
+    const big = Array(11).fill(qs[0]); await reverts(send(oracle, chronos, CH.abi, 'createMarkets', [big, Array(11).fill(cs[0]), Array(11).fill(td[0]), Array(11).fill(rd[0])]), 'InvalidBatch'); ok('createMarkets: more than MAX_CREATE_BATCH (10) rejected');
+    await send(owner, chronos, CH.abi, 'pause', []);
+    await reverts(send(oracle, chronos, CH.abi, 'createMarkets', [qs, cs, td, rd]), 'EnforcedPause'); ok('createMarkets: blocked while the contract is paused');
+    await send(owner, chronos, CH.abi, 'unpause', []);
+  }
+
   console.log('\nAll contract tests passed.');
   process.exit(0);
 })().catch((e) => { console.error('FAIL', e.message || e); process.exit(1); });

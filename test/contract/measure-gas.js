@@ -1,0 +1,36 @@
+'use strict';
+const hre = require('hardhat'); const { createWalletClient, createPublicClient, custom } = require('viem'); const { hardhat } = require('viem/chains'); const { privateKeyToAccount } = require('viem/accounts');
+const CH = require('./out/Chronos.json'), USDC = require('./out/MockUSDC.json'); const provider = hre.network.provider;
+const transport = custom({ request: ({ method, params }) => provider.request({ method, params }) }); const pub = createPublicClient({ chain: hardhat, transport });
+const [owner, oracle, alice, bob, carol] = ['01', '02', '03', '04', '05'].map((n) => privateKeyToAccount('0x' + n.repeat(32))); const wc = (a) => createWalletClient({ account: a, chain: hardhat, transport });
+const now = async () => Number((await pub.getBlock()).timestamp); const mine = async (s) => { await provider.request({ method: 'evm_increaseTime', params: [s] }); await provider.request({ method: 'evm_mine', params: [] }); };
+const tx = async (a, address, abi, functionName, args) => { const { request } = await pub.simulateContract({ address, abi, functionName, args, account: a }); return pub.waitForTransactionReceipt({ hash: await wc(a).writeContract(request) }); };
+(async () => {
+  for (const a of [owner, oracle, alice, bob, carol]) await provider.request({ method: 'hardhat_setBalance', params: [a.address, '0x56BC75E2D63100000'] });
+  const rc = await pub.waitForTransactionReceipt({ hash: await wc(owner).deployContract({ abi: USDC.abi, bytecode: USDC.bytecode }) }); const usdc = rc.contractAddress;
+  const d = await pub.waitForTransactionReceipt({ hash: await wc(owner).deployContract({ abi: CH.abi, bytecode: CH.bytecode, args: [usdc, oracle.address, owner.address, 500n, 15552000n, owner.address] }) }); const chronos = d.contractAddress;
+  for (const a of [alice, bob, carol]) { await tx(owner, usdc, USDC.abi, 'mint', [a.address, 10_000_000_000n]); await tx(a, usdc, USDC.abi, 'approve', [chronos, 10_000_000_000n]); }
+  const q = 'Will the US Federal Reserve lower the federal funds target range at its December 2026 FOMC meeting?'.padEnd(110, '.');
+  const c = ('Resolves YES if the FOMC statement on federalreserve.gov by 2026-12-10 23:59 UTC announces a cut to the target range at the Dec 8-9 meeting; NO if unchanged or raised. Source: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm').padEnd(300, '.');
+  const bigC = 'x'.repeat(4000);
+  const t = await now(); const R = {};
+  R['deploy Chronos'] = d.gasUsed;
+  R['createMarket (1 market, 110-char question, 300-char criteria)'] = (await tx(oracle, chronos, CH.abi, 'createMarket', [q, c, BigInt(t + 1e5), BigInt(t + 2e5)])).gasUsed;
+  R['createMarkets (3 markets in one tx)'] = (await tx(oracle, chronos, CH.abi, 'createMarkets', [[q, q, q], [c, c, c], Array(3).fill(BigInt(t + 1e5)), Array(3).fill(BigInt(t + 2e5))])).gasUsed;
+  R['createMarket with a 4000-char criteria (what NOT to do)'] = (await tx(oracle, chronos, CH.abi, 'createMarket', [q, bigC, BigInt(t + 1e5), BigInt(t + 2e5)])).gasUsed;
+  R['buyShares (first purchase by a user)'] = (await tx(alice, chronos, CH.abi, 'buyShares', [0n, 1, 5_000_000n])).gasUsed;
+  R['buyShares (second purchase, same user)'] = (await tx(alice, chronos, CH.abi, 'buyShares', [0n, 1, 5_000_000n])).gasUsed;
+  await tx(bob, chronos, CH.abi, 'buyShares', [0n, 2, 5_000_000n]); await tx(carol, chronos, CH.abi, 'buyShares', [0n, 1, 5_000_000n]);
+  await mine(1.1e5);
+  const shortURI = 'chronos:v1:0:' + 'a'.repeat(64); const bigURI = 'data:application/json;base64,' + 'A'.repeat(2000);
+  R['resolveMarket, 80-byte evidence URI (hash pointer)'] = (await tx(oracle, chronos, CH.abi, 'resolveMarket', [0n, 1, shortURI])).gasUsed;
+  const m1 = await (async () => { await tx(oracle, chronos, CH.abi, 'createMarket', [q, c, BigInt((await now()) + 1000), BigInt((await now()) + 5000)]); return Number(await pub.readContract({ address: chronos, abi: CH.abi, functionName: 'marketCount' })) - 1; })();
+  await tx(alice, chronos, CH.abi, 'buyShares', [BigInt(m1), 1, 1_000_000n]); await mine(1100);
+  R['resolveMarket, 2 KB data-URI evidence (old approach)'] = (await tx(oracle, chronos, CH.abi, 'resolveMarket', [BigInt(m1), 1, bigURI])).gasUsed;
+  R['claimWinnings (one user claims their own)'] = (await tx(alice, chronos, CH.abi, 'claimWinnings', [0n])).gasUsed;
+  R['claimBatch (2 more winners paid by the agent)'] = (await tx(oracle, chronos, CH.abi, 'claimBatch', [0n, [carol.address, bob.address]])).gasUsed;
+  const m2 = await (async () => { await tx(oracle, chronos, CH.abi, 'createMarket', [q, c, BigInt((await now()) + 1000), BigInt((await now()) + 5000)]); return Number(await pub.readContract({ address: chronos, abi: CH.abi, functionName: 'marketCount' })) - 1; })();
+  await mine(1100); R['closeTrading (separate keeper transaction)'] = (await tx(oracle, chronos, CH.abi, 'closeTrading', [BigInt(m2)])).gasUsed;
+  await mine(5000); R['markRefundable (cancel an unresolved market)'] = (await tx(oracle, chronos, CH.abi, 'markRefundable', [BigInt(m2)])).gasUsed;
+  console.log(JSON.stringify(Object.fromEntries(Object.entries(R).map(([k, v]) => [k, Number(v)])), null, 1)); process.exit(0);
+})().catch((e) => { console.error(e.message); process.exit(1); });

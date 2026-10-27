@@ -1,5 +1,5 @@
 'use strict';
-process.env.NODE_ENV = 'test';
+process.env.NODE_ENV = 'test'; process.env.GEMINI_MAX_RPM = '600000';
 const assert = require('assert');
 const { fakeDb } = require('./harness');
 const config = require('../src/config');

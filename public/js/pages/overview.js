@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { wallet } from '../wallet.js';
 import { esc, formatUsdc, formatDate, countdown, outcomeTag, emptyState, skeletonRows } from '../utils.js';
 import { onWallet, wireClaimButtons } from '../ui.js';
+import { getStats, getMyPositions } from '../api2.js';
 
 export async function renderOverview(view) {
   view.innerHTML = `
@@ -13,6 +14,7 @@ export async function renderOverview(view) {
           ${[0, 1, 2, 3].map(() => `<div class="metric"><div class="skeleton" style="height:14px;width:90px"></div><div class="skeleton" style="height:28px;width:70px;margin-top:10px"></div></div>`).join('')}
         </div>
 
+        <div class="metrics" id="mine" hidden></div>
         <div id="claim-section" hidden></div>
 
         <div class="cols">
@@ -31,21 +33,41 @@ export async function renderOverview(view) {
   const $ = (s) => view.querySelector(s);
 
   const [protocol, markets, resolutions] = await Promise.allSettled([
-    api.protocolStatus(),
+    getStats(),
     api.markets({ state: 'Open', limit: 5, sort: 'deadline' }),
     api.resolutions({ limit: 5 }),
   ]);
 
   if (protocol.status === 'fulfilled') {
     const p = protocol.value;
+    const usdc = (v, d = 2) => (v === null || v === undefined ? '—' : formatUsdc(v, d));
     $('#metrics').innerHTML = `
-      <div class="metric"><div class="k">Open markets</div><div class="v">${esc(p.openMarkets ?? '—')}</div><div class="n">Accepting positions</div></div>
-      <div class="metric"><div class="k">Resolved markets</div><div class="v">${esc(p.resolvedMarkets ?? '—')}</div><div class="n">Settled on-chain</div></div>
-      <div class="metric"><div class="k">Total volume</div><div class="v">${formatUsdc(p.totalVolumeUsdc, 0)} <small>USDC</small></div><div class="n">Staked all-time</div></div>
-      <div class="metric"><div class="k">Protocol fee</div><div class="v">${(p.feeBps / 100).toFixed(1)}%</div><div class="n">On winners’ profit only</div></div>`;
+      <div class="metric"><div class="k">Value locked (TVL)</div><div class="v">${usdc(p.tvlUsdc)} <small>USDC</small></div><div class="n">Held by the contract now</div></div>
+      <div class="metric"><div class="k">Total staked</div><div class="v">${usdc(p.totalStakedUsdc)} <small>USDC</small></div><div class="n">${p.positions} position${p.positions === 1 ? '' : 's'} from ${p.stakers} staker${p.stakers === 1 ? '' : 's'}</div></div>
+      <div class="metric"><div class="k">Markets</div><div class="v">${esc(p.openMarkets)} <small>open</small></div><div class="n">${esc(p.resolvedMarkets)} resolved${p.awaitingResolution ? `, ${esc(p.awaitingResolution)} awaiting oracle` : ''}</div></div>
+      <div class="metric"><div class="k">Paid to winners</div><div class="v">${usdc(p.paidToWinnersUsdc)} <small>USDC</small></div><div class="n">${BigInt(p.refundedUsdc || '0') > 0n ? `Plus ${usdc(p.refundedUsdc)} refunded` : 'Sent in USDC'}</div></div>`;
   } else {
-    $('#metrics').innerHTML = `<div class="metric" style="grid-column:1/-1"><div class="n">Protocol data is unavailable. The contract may not be deployed yet.</div></div>`;
+    $('#metrics').innerHTML = `<div class="metric" style="grid-column:1/-1"><div class="n">Protocol data is unavailable right now. ${esc(protocol.reason?.message || '')}</div></div>`;
   }
+
+  // Your own activity (when a wallet is connected)
+  async function loadMine() {
+    const box = $('#mine');
+    if (!box) return;
+    if (!wallet.connected) { box.hidden = true; return; }
+    try {
+      const { summary: m } = await getMyPositions(wallet.account, 1, 1);
+      if (!m) { box.hidden = true; return; }
+      box.hidden = false;
+      box.innerHTML = `
+        <div class="metric"><div class="k">You have staked</div><div class="v">${formatUsdc(m.totalStaked)} <small>USDC</small></div><div class="n">${m.positions} position${m.positions === 1 ? '' : 's'} in ${m.markets} market${m.markets === 1 ? '' : 's'}</div></div>
+        <div class="metric"><div class="k">Still in play</div><div class="v">${formatUsdc(m.openStaked)} <small>USDC</small></div><div class="n">In unsettled markets</div></div>
+        <div class="metric"><div class="k">Paid to you</div><div class="v">${formatUsdc(m.paidOut)} <small>USDC</small></div><div class="n">Winnings received</div></div>
+        <div class="metric"><div class="k">Awaiting payout</div><div class="v">${m.unclaimed}</div><div class="n"><a href="#positions" style="text-decoration:underline">View my positions</a></div></div>`;
+    } catch { box.hidden = true; }
+  }
+  loadMine();
+  onWallet(view, loadMine);
 
   const open = markets.status === 'fulfilled' ? markets.value.markets || [] : [];
   $('#open-list').innerHTML = open.length

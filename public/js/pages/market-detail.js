@@ -3,6 +3,8 @@ import { api } from '../api.js';
 import { wallet } from '../wallet.js';
 import { esc, formatUsdc, formatDate, formatDateTime, countdown, poolPercent, statusPill, outcomeTag, splitBar, emptyState, explorerTxUrl, showToast } from '../utils.js';
 import { icon, onWallet } from '../ui.js';
+import { recordPosition } from '../api2.js';
+import { showPositionPlaced } from '../dialogs.js';
 import { connectWallet, requireSignIn } from '../login.js';
 import { resolveApi, session } from '../session.js';
 import { timeAgo } from '../utils.js';
@@ -35,7 +37,7 @@ export async function renderMarketDetail(view, { id, trade }) {
         </div>
         <h1 style="font-size:24px;line-height:1.3;margin:14px 0 20px;max-width:760px">${esc(m.question)}</h1>
         ${splitBar(pct, true)}
-        <p class="hint">${formatUsdc(m.yesPool || '0')} USDC on Yes, ${formatUsdc(m.noPool || '0')} USDC on No. ${formatUsdc(m.totalPool || '0')} USDC in total.</p>
+        <p class="hint">${BigInt(m.totalPool || '0') > 0n ? `${formatUsdc(m.yesPool || '0')} USDC on Yes, ${formatUsdc(m.noPool || '0')} USDC on No. ` : 'Nobody has staked yet. '}Volume ${formatUsdc(m.totalPool || '0')} USDC · ${m.stakerCount || 0} staker${(m.stakerCount || 0) === 1 ? '' : 's'} · ${m.tradeCount || 0} position${(m.tradeCount || 0) === 1 ? '' : 's'}.</p>
         <dl class="kv" style="margin-top:20px;padding-top:20px;border-top:1px solid var(--line)">
           <div><dt>Trading closes</dt><dd class="num">${formatDateTime(m.tradingDeadline)} <span class="countdown${open && cd.urgent ? ' urgent' : ''}" style="font-weight:400">${open ? '· ' + esc(cd.label) + ' left' : ''}</span></dd></div>
           <div><dt>Resolution deadline</dt><dd class="num">${formatDateTime(m.resolutionDeadline)} <span class="countdown" style="font-weight:400">${resolved ? '· resolved ' + formatDate(m.resolvedAt) : rcd.ended ? '' : '· ' + esc(rcd.label) + ' left'}</span></dd></div>
@@ -173,9 +175,14 @@ function wireTrade(view, m, focusAmount) {
       }
       submit.textContent = 'Submitting position…';
       const tx = await wallet.buyShares(m.marketId, side, micro);
-      showToast('Position placed', 'success');
-      status.innerHTML = link('Position confirmed.', tx);
+      status.innerHTML = link('Position confirmed on-chain.', tx);
       submit.textContent = 'Position placed';
+      // Store it right away (the server re-reads the chain itself) so Overview, My positions and this market's stats update now.
+      let saved = null;
+      try { saved = await recordPosition(tx); } catch (e) { console.warn('recordPosition:', e.message); }
+      const p = saved?.positions?.[0];
+      const choice = await showPositionPlaced({ positionId: p?.positionId, marketId: m.marketId, outcome: side === 1 ? 'YES' : 'NO', amount: String(micro), txHash: tx, question: m.question, recorded: !!p });
+      window.chronosRouter(choice === 'view' ? 'positions' : 'market', choice === 'view' ? {} : { id: m.marketId });
     } catch (err) {
       showToast(`Transaction failed: ${err.message}`, 'error');
       status.textContent = `Error: ${err.message}`;

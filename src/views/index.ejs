@@ -6,6 +6,11 @@
   <title>Chronos: prediction markets resolved by an autonomous oracle</title>
   <meta name="description" content="Chronos is a prediction market protocol on Arc. An autonomous AI oracle finds events, opens markets and resolves outcomes on-chain in USDC." />
 
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/assets/favicon.ico" sizes="any" />
+  <link rel="icon" href="/assets/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+  <meta name="theme-color" content="#18181b" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
@@ -77,11 +82,11 @@
         </div>
       </section>
 
-      <div class="metrics lp-facts" style="margin-bottom:80px">
-        <div class="metric"><div class="k">Market type</div><div class="v">Yes / No</div></div>
-        <div class="metric"><div class="k">Protocol fee</div><div class="v"><%= feePct %>%</div><div class="n">On profit only</div></div>
-        <div class="metric"><div class="k">Minimum stake</div><div class="v">0.10 <small>USDC</small></div></div>
-        <div class="metric"><div class="k">Settlement</div><div class="v">On-chain</div><div class="n"><%= networkName %></div></div>
+      <div class="metrics lp-facts" style="margin-bottom:80px" aria-label="Live protocol statistics">
+        <div class="metric"><div class="k">Value locked (TVL)</div><div class="v" id="st-tvl">&mdash;</div><div class="n">USDC held on-chain</div></div>
+        <div class="metric"><div class="k">Total staked</div><div class="v" id="st-staked">&mdash;</div><div class="n" id="st-staked-n">All markets</div></div>
+        <div class="metric"><div class="k">Markets resolved</div><div class="v" id="st-resolved">&mdash;</div><div class="n" id="st-resolved-n">&nbsp;</div></div>
+        <div class="metric"><div class="k">Paid to winners</div><div class="v" id="st-won">&mdash;</div><div class="n">Sent automatically in USDC</div></div>
       </div>
     </div>
 

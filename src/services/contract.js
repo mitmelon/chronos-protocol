@@ -1,6 +1,6 @@
 'use strict';
 
-const { createPublicClient, createWalletClient, http, parseAbi, parseEventLogs } = require('viem');
+const { createPublicClient, createWalletClient, http, fallback, parseAbi, parseEventLogs, parseUnits, formatUnits } = require('viem');
 const { privateKeyToAccount } = require('viem/accounts');
 const config = require('../config');
 
@@ -19,6 +19,8 @@ const CHRONOS_ABI = parseAbi([
   'function owner() view returns (address)',
   'function claimed(uint256, address) view returns (bool)',
   'function createMarket(string question, string resolutionCriteria, uint64 tradingDeadline, uint64 resolutionDeadline) returns (uint256 marketId)',
+  'function createMarkets(string[] questions, string[] resolutionCriteria, uint64[] tradingDeadlines, uint64[] resolutionDeadlines) returns (uint256 firstMarketId)',
+  'function MAX_CREATE_BATCH() view returns (uint256)',
   'function claimWinningsFor(uint256 marketId, address user)',
   'function claimRefundFor(uint256 marketId, address user)',
   'function claimBatch(uint256 marketId, address[] users) returns (uint256 paid)',
@@ -68,18 +70,24 @@ const arcChain = {
   id: config.arc.chainId,
   name: config.arc.networkName,
   nativeCurrency: config.arc.nativeCurrency,
-  rpcUrls: { default: { http: [config.arc.rpcUrl] } },
+  rpcUrls: { default: { http: config.arc.rpcUrls } },
   blockExplorers: { default: { name: 'Arc Explorer', url: config.arc.explorerUrl } },
   testnet: !config.arc.isMainnet,
 };
+
+// Try each RPC in order; viem moves to the next one when a request fails (the Arc docs list several hosts).
+function makeTransport(timeout) {
+  const urls = config.arc.rpcUrls;
+  return urls.length > 1 ? fallback(urls.map((u) => http(u, { timeout, retryCount: 1 })), { rank: false }) : http(urls[0], { timeout, retryCount: 2 });
+}
 
 let _publicClient = null;
 let _walletClient = null;
 
 function getPublicClient() {
   if (!_publicClient) {
-    if (!config.arc.rpcUrl) throw new Error('ARC_RPC_URL not configured');
-    _publicClient = createPublicClient({ chain: arcChain, transport: http(config.arc.rpcUrl, { timeout: 20000, retryCount: 3 }) });
+    if (!config.arc.rpcUrls.length) throw new Error('No Arc RPC URL configured');
+    _publicClient = createPublicClient({ chain: arcChain, transport: makeTransport(20000) });
   }
   return _publicClient;
 }
@@ -88,7 +96,7 @@ function getWalletClient() {
   if (!_walletClient) {
     if (!config.oracle.privateKey) throw new Error('ORACLE_PRIVATE_KEY not configured');
     const account = privateKeyToAccount(config.oracle.privateKey);
-    _walletClient = createWalletClient({ chain: arcChain, transport: http(config.arc.rpcUrl, { timeout: 20000 }), account });
+    _walletClient = createWalletClient({ chain: arcChain, transport: makeTransport(20000), account });
   }
   return _walletClient;
 }
@@ -165,6 +173,25 @@ function serial(fn) {
   return run;
 }
 
+/**
+ * Refuse a transaction whose worst-case gas cost exceeds AGENT_MAX_TX_COST_USDC. Gas on Arc is paid in USDC, so a
+ * runaway fee would drain a small wallet. Arc refunds the difference between maxFeePerGas and the actual price,
+ * so this check is conservative. A simulation revert is left for simulateContract to report by name.
+ */
+async function assertCostWithinCap(client, call) {
+  const cap = parseUnits(String(config.agent.maxTxCostUsdc), 18);
+  let gas, fees;
+  try {
+    [gas, fees] = await Promise.all([client.estimateContractGas({ ...call, abi: CHRONOS_ABI }), client.estimateFeesPerGas()]);
+  } catch { return; }
+  const worst = gas * (fees.maxFeePerGas || fees.gasPrice || 0n);
+  if (worst > cap) {
+    const e = new Error(`${call.functionName} estimated at up to ${formatUnits(worst, 18)} USDC (${gas} gas), above the cap of ${config.agent.maxTxCostUsdc} USDC (AGENT_MAX_TX_COST_USDC). Not sent.`);
+    e.errorName = 'CostCap';
+    throw e;
+  }
+}
+
 let _chainVerified = false;
 /** Refuse to sign anything if the RPC is not the chain this deployment is configured for. */
 async function assertChain() {
@@ -181,6 +208,8 @@ async function sendTxUnserialized(functionName, args, { timeoutMs = 90000 } = {}
   const client = getPublicClient();
   const address = getChronosAddress();
   await assertChain();
+
+  await assertCostWithinCap(client, { address, functionName, args, account: wallet.account });
 
   let request;
   try {
@@ -236,6 +265,27 @@ async function createMarket(question, resolutionCriteria, tradingDeadlineSecs, r
   return { txHash, marketId, blockNumber: Number(receipt.blockNumber) };
 }
 
+/**
+ * Create several markets in ONE transaction. items: [{ question, criteria, tradingTs, resolutionTs }].
+ * Returns { txHash, marketIds, blockNumber } with marketIds in the same order as items.
+ */
+async function createMarkets(items) {
+  if (!Array.isArray(items) || !items.length) throw new Error('createMarkets needs at least one market');
+  const args = [items.map((i) => i.question), items.map((i) => i.criteria), items.map((i) => BigInt(i.tradingTs)), items.map((i) => BigInt(i.resolutionTs))];
+  const { txHash, receipt } = await sendTx('createMarkets', args);
+  const ids = parseEventLogs({ abi: CHRONOS_ABI, eventName: 'MarketCreated', logs: receipt.logs })
+    .filter((l) => l.address.toLowerCase() === getChronosAddress().toLowerCase()).map((l) => Number(l.args.marketId));
+  if (ids.length !== items.length) throw Object.assign(new Error(`createMarkets confirmed but returned ${ids.length} of ${items.length} markets (tx ${txHash})`), { txHash, unconfirmed: true });
+  return { txHash, marketIds: ids, blockNumber: Number(receipt.blockNumber) };
+}
+
+/** Current fee level, for cost estimates and diagnostics. */
+async function estimateFees() {
+  const client = getPublicClient();
+  const [fees, gasPrice] = await Promise.all([client.estimateFeesPerGas().catch(() => ({})), client.getGasPrice()]);
+  return { maxFeePerGas: fees.maxFeePerGas || gasPrice, gasPrice };
+}
+
 function marketIdFromReceipt(receipt) {
   const logs = parseEventLogs({ abi: CHRONOS_ABI, eventName: 'MarketCreated', logs: receipt.logs })
     .filter((l) => l.address.toLowerCase() === getChronosAddress().toLowerCase());
@@ -288,6 +338,52 @@ async function claimBatch(marketId, users) {
   return { txHash, attempted: log ? Number(log.args.attempted) : users.length, paid: log ? Number(log.args.paid) : null };
 }
 
+/** Result of a previously broadcast createMarkets tx: { status: 'success'|'reverted'|'pending', marketIds?, blockNumber? } */
+async function getCreateMarketsResult(txHash) {
+  try {
+    const receipt = await getPublicClient().getTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') return { status: 'reverted' };
+    const marketIds = parseEventLogs({ abi: CHRONOS_ABI, eventName: 'MarketCreated', logs: receipt.logs })
+      .filter((l) => l.address.toLowerCase() === getChronosAddress().toLowerCase()).map((l) => Number(l.args.marketId));
+    return { status: 'success', marketIds, blockNumber: Number(receipt.blockNumber) };
+  } catch (err) {
+    if (/not be found|TransactionReceiptNotFound/i.test(err.name + err.message)) return { status: 'pending' };
+    throw err;
+  }
+}
+
+// ── Position events: the source of truth for who staked what, and who was paid ───────────────────────────────
+
+const POSITION_EVENT_NAMES = ['SharesPurchased', 'WinningsClaimed', 'RefundClaimed'];
+
+function normalizePositionLog(l) {
+  const a = l.args, base = { txHash: l.transactionHash, logIndex: Number(l.logIndex), blockNumber: Number(l.blockNumber), marketId: Number(a.marketId) };
+  if (l.eventName === 'SharesPurchased') return { ...base, type: 'buy', user: a.buyer, outcome: Number(a.outcome), amount: a.amount.toString() };
+  if (l.eventName === 'WinningsClaimed') return { ...base, type: 'winnings', user: a.claimant, amount: a.netPayout.toString(), stake: a.originalStake.toString(), profit: a.profit.toString(), fee: a.fee.toString() };
+  return { ...base, type: 'refund', user: a.claimant, amount: a.amount.toString() };
+}
+
+/** Stakes and payouts in ONE transaction (used right after a user buys, so the dashboard updates instantly). */
+async function getPositionEventsForTx(txHash) {
+  const receipt = await getPublicClient().getTransactionReceipt({ hash: txHash });
+  if (receipt.status !== 'success') return [];
+  return parseEventLogs({ abi: CHRONOS_ABI, eventName: POSITION_EVENT_NAMES, logs: receipt.logs })
+    .filter((l) => l.address.toLowerCase() === getChronosAddress().toLowerCase())
+    .map((l) => normalizePositionLog({ ...l, blockNumber: receipt.blockNumber }));
+}
+
+/** Stakes and payouts in a block range (used by the background indexer to catch everything, from any app). */
+async function getPositionEvents(fromBlock, toBlock) {
+  const events = CHRONOS_ABI.filter((e) => e.type === 'event' && POSITION_EVENT_NAMES.includes(e.name));
+  const logs = await getPublicClient().getLogs({ address: getChronosAddress(), events, fromBlock: BigInt(fromBlock), toBlock: BigInt(toBlock) });
+  return logs.map(normalizePositionLog);
+}
+
+/** USDC held by the contract right now: the protocol's total value locked. */
+async function getTvl() {
+  return (await getPublicClient().readContract({ address: config.arc.usdcAddress, abi: USDC_ABI, functionName: 'balanceOf', args: [getChronosAddress()] })).toString();
+}
+
 async function getMarketEvents(marketId, fromBlock, toBlock) {
   const client = getPublicClient();
   const addr = getChronosAddress();
@@ -330,8 +426,8 @@ function formatMarket(raw, marketId) {
 module.exports = {
   getMarketCount, getMarket, getShares, computeWinnings,
   getProtocolSettings, getBlockNumber,
-  createMarket, getCreateMarketResult, claimBatch, isClaimed, getParticipants,
+  createMarket, createMarkets, estimateFees, getPositionEventsForTx, getPositionEvents, getTvl, getCreateMarketResult, getCreateMarketsResult, claimBatch, isClaimed, getParticipants,
   closeTrading, resolveMarket, markRefundable, getMarketEvents,
   getPublicClient, getWalletClient, getOracleAddress, CHRONOS_ABI, USDC_ABI, arcChain, arcTestnet: arcChain,
-  _internal: { formatMarket, serial },
+  _internal: { formatMarket, serial, assertCostWithinCap },
 };

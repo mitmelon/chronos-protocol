@@ -14,7 +14,7 @@
  */
 
 const guards = require('./guards');
-const { sha256, hostnameOf, matchesDomain, buildEvidenceURI } = require('../services/evidence');
+const { sha256, hostnameOf, matchesDomain, buildEvidence } = require('../services/evidence');
 const { toDate } = require('./lib');
 
 const CATEGORIES = ['Finance', 'Politics', 'Technology', 'Sports', 'Science', 'Other'];
@@ -38,7 +38,7 @@ const defaultDeps = resolveDeps;
 
 /** Per-run working memory: what the agent has actually seen (so it can only cite or rely on real pages). */
 function newSession() {
-  return { searches: 0, reads: 0, hosts: new Set(), seen: new Map(), pages: new Map(), created: [], rejected: [], chainFailures: 0 };
+  return { searches: 0, reads: 0, proposals: 0, hosts: new Set(), seen: new Map(), pages: new Map(), staged: [], created: [], rejected: [], chainFailures: 0 };
 }
 
 /** Settled markets are paid out automatically by the payout agent (deduped per market). Never fails the caller. */
@@ -48,13 +48,16 @@ async function queuePayout(deps, marketId) {
 }
 
 const shortText = (arr, max) => (Array.isArray(arr) ? arr.join('\n') : String(arr || '')).slice(0, max);
+const hostRead = (session, url) => { const h = hostnameOf(url); return !!h && [...session.pages.entries()].some(([u, pg]) => pg.retrieval === 'extract' && (() => { const x = hostnameOf(u); return !!x && (matchesDomain(h, x) || matchesDomain(x, h)); })()); };
 const hostSeen = (session, url) => { const h = hostnameOf(url); return !!h && [...session.hosts].some((x) => matchesDomain(h, x) || matchesDomain(x, h)); };
 
 // ── Research tools (Parallel) ────────────────────────────────────────────────
 
-function researchTools(deps, session, { afterDate } = {}) {
+function researchTools(deps, session, { afterDate, budget } = {}) {
   const { parallel, config } = deps;
   const A = config.agent;
+  const maxSearches = (budget && budget.searches) || A.maxSearchesPerRun;
+  const maxReads = (budget && budget.reads) || A.maxReadsPerRun;
   return [
     {
       name: 'web_search',
@@ -71,16 +74,16 @@ function researchTools(deps, session, { afterDate } = {}) {
         required: ['objective', 'queries'],
       },
       async handler(args) {
-        if (session.searches >= A.maxSearchesPerRun) return { ok: false, error: `Search budget used up (${A.maxSearchesPerRun}). Work with what you have and finish.` };
+        if (session.searches >= maxSearches) return { ok: false, error: `Search budget used up (${maxSearches}). Work with what you have and finish.` };
         session.searches++;
-        const results = await parallel.search({ objective: args.objective, queries: args.queries, afterDate: args.after_date || afterDate, includeDomains: args.include_domains, maxResults: 8 });
+        const results = await parallel.search({ objective: args.objective, queries: args.queries, afterDate: args.after_date || afterDate, includeDomains: args.include_domains, maxResults: 6, maxCharsPerResult: 900 });
         for (const r of results) {
           const h = hostnameOf(r.url); if (h) session.hosts.add(h);
           session.seen.set(r.url, { title: r.title, publishDate: r.publishDate });
           const text = shortText(r.excerpts, 6000);
           if (text && !session.pages.has(r.url)) session.pages.set(r.url, { text, contentHash: sha256(text), fetchedAt: new Date(), publishDate: r.publishDate, title: r.title, retrieval: 'search' });
         }
-        return { ok: true, count: results.length, results: results.map((r) => ({ url: r.url, title: r.title, published: r.publishDate, excerpt: shortText(r.excerpts, 900) })) };
+        return { ok: true, count: results.length, results: results.map((r) => ({ url: r.url, title: r.title, published: r.publishDate, excerpt: shortText(r.excerpts, 600) })) };
       },
     },
     {
@@ -93,7 +96,7 @@ function researchTools(deps, session, { afterDate } = {}) {
         required: ['url', 'objective'],
       },
       async handler(args) {
-        if (session.reads >= A.maxReadsPerRun) return { ok: false, error: `Page-read budget used up (${A.maxReadsPerRun}).` };
+        if (session.reads >= maxReads) return { ok: false, error: `Page-read budget used up (${maxReads}).` };
         session.reads++;
         const { pages, errors } = await parallel.extract({ urls: [args.url], objective: args.objective });
         const page = pages[0];
@@ -136,17 +139,18 @@ Answer independently, without assuming the proposer is right. Return JSON with e
 }
 
 function discoveryTools(deps, session, { runId, quota }) {
-  const { config, contract, generateJson, jobs } = deps;
+  const { config, generateJson } = deps;
+  const A = config.agent;
   const s = guards.settings(config);
   const database = () => deps.db();
 
   async function recentQuestions() {
     const rows = await database().collection('predictions').find({}, { projection: { question: 1 } }).sort({ createdAt: -1 }).limit(400).toArray();
     const open = await database().collection('marketProposals').find({ state: { $in: ['pending', 'unconfirmed'] } }, { projection: { question: 1 } }).toArray();
-    return [...rows.map((r) => r.question), ...open.map((r) => r.question), ...session.created.map((c) => c.question)].filter(Boolean);
+    return [...rows.map((r) => r.question), ...open.map((r) => r.question), ...session.staged.map((c) => c.question), ...session.created.map((c) => c.question)].filter(Boolean);
   }
 
-  return [
+  const tools = [
     {
       name: 'check_duplicate',
       description: 'Check a draft question against existing markets. Returns the closest matches with similarity scores (0-1). Anything at or above 0.75 will be rejected as a duplicate.',
@@ -159,37 +163,40 @@ function discoveryTools(deps, session, { runId, quota }) {
     },
     {
       name: 'create_market',
-      description: 'Publish a market on-chain. Only call this for an event you have verified is in the FUTURE, whose outcome is genuinely uncertain (your honest probability must be between '
-        + `${Math.round(s.minProb * 100)}% and ${Math.round(s.maxProb * 100)}%), and whose result will be published by the authority source you name. The proposal is checked by strict code rules and an independent reviewer; if it is rejected you get the exact reasons and can fix and resubmit. All dates are ISO 8601 UTC.`,
+      description: 'Propose a market for today\'s batch. Approved markets are saved, then published together in ONE on-chain transaction when you finish. Only propose an event you have verified is in the FUTURE, whose outcome is genuinely uncertain (your honest probability must be between '
+        + `${Math.round(s.minProb * 100)}% and ${Math.round(s.maxProb * 100)}%, backed by data you found), and whose result will be published by the authority source you name. The proposal is checked by strict code rules and an independent reviewer; if it is rejected you get the exact reasons. You have a limited number of proposals, so research before you propose. All dates are ISO 8601 UTC.`,
       parameters: {
         type: 'object',
         properties: {
-          question: { type: 'string', description: 'YES/NO question starting with "Will" and ending with "?", with exact thresholds and a date, e.g. "Will X exceed Y on date Z?"' },
-          resolution_criteria: { type: 'string', description: 'Exactly when it resolves YES and when NO, the named source, timezone, and cutoff time.' },
+          question: { type: 'string', description: `YES/NO question starting with "Will" and ending with "?", at most ${s.maxQuestionChars} characters, with exact thresholds and a date.` },
+          resolution_criteria: { type: 'string', description: `Stored on-chain, so at most ${s.maxCriteriaChars} characters: exactly when it resolves YES and when NO, the source, timezone, cutoff.` },
           category: { type: 'string', enum: CATEGORIES },
           tags: { type: 'array', items: { type: 'string' } },
           authority_source_url: { type: 'string', description: 'URL of the official page that will publish the result. You must have found it via web_search or read_page.' },
           source_event_url: { type: 'string', description: 'URL of the article that told you about this event (used to avoid reusing an event).' },
           event_date: { type: 'string', description: 'When the outcome becomes knowable (ISO 8601 UTC). Must be in the future.' },
           trading_deadline: { type: 'string', description: 'When trading closes (ISO UTC). At least 24h from now and at least 1h BEFORE event_date.' },
-          resolution_deadline: { type: 'string', description: 'Last moment to resolve (ISO UTC). 24h to 30 days after event_date.' },
+          resolution_deadline: { type: 'string', description: 'Last moment to resolve (ISO UTC): 24h to 30 days after event_date. Prefer about 7 days after the event unless the result is published instantly: the market resolves as soon as the answer is found, and the deadline only matters as the refund fallback.' },
           estimated_probability_yes: { type: 'number', description: 'Your honest probability (0-1) that the answer is YES.' },
+          probability_basis: { type: 'string', description: 'The data behind that number (polls, market odds, forecasts, base rates) you found while researching.' },
           why_uncertain: { type: 'string', description: 'Why informed people genuinely disagree on this outcome.' },
-          how_to_verify: { type: 'string', description: 'Where and how the answer will be found after the event.' },
+          how_to_verify: { type: 'string', description: 'Where and how the answer will be found after the event (stored off-chain).' },
         },
-        required: ['question', 'resolution_criteria', 'category', 'authority_source_url', 'event_date', 'trading_deadline', 'resolution_deadline', 'estimated_probability_yes', 'why_uncertain', 'how_to_verify'],
+        required: ['question', 'resolution_criteria', 'category', 'authority_source_url', 'event_date', 'trading_deadline', 'resolution_deadline', 'estimated_probability_yes', 'probability_basis', 'why_uncertain', 'how_to_verify'],
       },
       async handler(p) {
         const nowMs = deps.now();
-        const reject = (problems) => { session.rejected.push({ question: String(p.question || '').slice(0, 200), reasons: problems }); return { ok: false, problems, hint: 'Fix these and call create_market again, or choose a different event.' }; };
+        const reject = (problems, extra = {}) => { session.rejected.push({ question: String(p.question || '').slice(0, 200), reasons: problems }); console.log(`[discovery] create_market rejected: ${problems.join(' | ').slice(0, 600)}`); return { ok: false, problems, hint: 'Fix these and call create_market again, or choose a different event.', ...extra }; };
 
-        if (session.created.length >= quota) return { ok: false, terminal: true, error: 'Daily quota reached. Stop.' };
-        if (session.chainFailures >= 2) return { ok: false, terminal: true, error: 'Repeated on-chain failures. Stop.' };
+        if (session.staged.length >= quota) return { ok: false, terminal: true, error: 'The batch is full. Stop.' };
+        if (++session.proposals > A.maxProposalsPerRun) return { ok: false, terminal: true, error: `Proposal budget used (${A.maxProposalsPerRun}). Stop.` };
 
-        const problems = [...guards.textProblems(p, nowMs), ...guards.uncertaintyProblems(p, s)];
+        const problems = [...guards.textProblems(p, nowMs, s), ...guards.uncertaintyProblems(p, s)];
         const sched = guards.scheduleProblems(p, nowMs, s);
         problems.push(...sched.problems);
-        if (p.authority_source_url && !hostSeen(session, p.authority_source_url)) problems.push('authority_source_url was not found in your research. Find or read that source with web_search/read_page first (do not guess URLs)');
+        let ungrounded = false;
+        if (p.authority_source_url && !hostSeen(session, p.authority_source_url)) { ungrounded = true; problems.push('authority_source_url was not found in your research. Pick one of the seen_sources below, or find that source with web_search/read_page first (do not guess URLs)'); }
+        if (p.authority_source_url && !ungrounded && !hostRead(session, p.authority_source_url)) problems.push('read the authority source with read_page first, to confirm it publishes this kind of result in a form you can quote. The answer must be findable when the market is due');
         if (!CATEGORIES.includes(p.category)) problems.push(`category must be one of ${CATEGORIES.join(', ')}`);
 
         const existing = await recentQuestions();
@@ -197,54 +204,37 @@ function discoveryTools(deps, session, { runId, quota }) {
         if (near && near.score >= s.dupSimilarity) problems.push(`near-duplicate of existing market "${near.question}" (similarity ${near.score})`);
         if (p.source_event_url) {
           const q = { 'source.eventUrl': p.source_event_url };
-          const used = (await database().collection('predictions').findOne(q, { projection: { _id: 1 } })) || (await database().collection('marketProposals').findOne({ ...q, state: { $ne: 'failed' } }, { projection: { _id: 1 } }));
+          const used = (await database().collection('predictions').findOne(q, { projection: { _id: 1 } })) || (await database().collection('marketProposals').findOne({ ...q, state: { $in: ['pending', 'created', 'unconfirmed'] } }, { projection: { _id: 1 } })) || session.staged.find((x) => x.meta.source.eventUrl === p.source_event_url);
           if (used) problems.push('this source event was already used for another market');
         }
-        if (problems.length) return reject(problems);
+        if (problems.length) return reject(problems, ungrounded ? { seen_sources: [...session.seen.keys()].slice(0, 12) } : {});
 
-        // Independent second opinion (no tools, has not seen the proposer's reasoning).
+        // Independent second opinion (no tools, has not seen the proposer's reasoning). Only reached when every free code check passed.
         let vet;
         try { vet = await generateJson({ system: VETTING_SYSTEM, prompt: vettingPrompt(p, new Date(nowMs).toISOString()), model: config.gemini.verifierModel }); }
-        catch (err) { return { ok: false, error: `Reviewer unavailable (${err.message}). Do not retry now; call finish_discovery.`, terminal: true }; }
+        catch (err) { return reject([`independent reviewer call failed: ${err.message}`.slice(0, 300)]); }
         const vetProblems = guards.vettingProblems(vet, s);
         if (vetProblems.length) return reject(vetProblems);
 
-        // Record the proposal first (so a crash between here and the chain leaves a trail), then go on-chain.
-        // Only markets that really exist on-chain ever enter the public `predictions` collection.
-        const fullCriteria = `${p.resolution_criteria.trim()}\n\nAuthority source: ${p.authority_source_url}\nHow the result is verified: ${p.how_to_verify.trim()}`.slice(0, 4000);
-        const question = p.question.trim().slice(0, 1024);
-        const proposals = database().collection('marketProposals');
-        const predictions = database().collection('predictions');
-        const now = new Date(nowMs);
+        // Approved: add to today's batch. Nothing touches the chain until the whole batch is published in one transaction.
+        const criteria = `${p.resolution_criteria.trim()}\nSource: ${p.authority_source_url}`.slice(0, 1024);
+        const question = p.question.trim();
         const meta = {
-          question, resolutionCriteria: fullCriteria, category: p.category, tags: (p.tags || []).slice(0, 8).map(String),
-          authoritySource: p.authority_source_url, verificationPlan: p.how_to_verify.trim(), whyUncertain: p.why_uncertain.trim(),
+          question, resolutionCriteria: criteria, category: p.category, tags: (p.tags || []).slice(0, 8).map(String),
+          authoritySource: p.authority_source_url, verificationPlan: p.how_to_verify.trim(), whyUncertain: p.why_uncertain.trim(), probabilityBasis: p.probability_basis.trim(),
           tradingDeadline: new Date(sched.tradingTs * 1000), resolutionDeadline: new Date(sched.resolutionTs * 1000), eventDate: new Date(sched.eventTs * 1000),
           tradingDeadlineTs: sched.tradingTs, resolutionDeadlineTs: sched.resolutionTs, eventDateTs: sched.eventTs,
           assessment: { agentProbabilityYes: Number(p.estimated_probability_yes), verifierProbabilityYes: Number(vet.probability_yes) },
-          source: { eventUrl: p.source_event_url || null }, discoveryRunId: runId,
+          source: { eventUrl: p.source_event_url || null },
         };
-        const { insertedId } = await proposals.insertOne({ ...meta, state: 'pending', createdAt: now, updatedAt: now });
-
-        try {
-          const { txHash, marketId, blockNumber } = await contract.createMarket(question, fullCriteria, sched.tradingTs, sched.resolutionTs);
-          await predictions.updateOne({ marketId }, { $set: { ...meta, marketId, createBlock: blockNumber, state: 'Open', outcome: 'UNRESOLVED', createTxHash: txHash, publishedAt: new Date(), updatedAt: new Date() }, $setOnInsert: { createdAt: now, yesPool: '0', noPool: '0', totalPool: '0' } }, { upsert: true });
-          await proposals.updateOne({ _id: insertedId }, { $set: { state: 'created', marketId, createTxHash: txHash, updatedAt: new Date() } });
-          session.created.push({ question, marketId, txHash });
-          try { await jobs.scheduleResolution(marketId, { dueAt: sched.eventTs * 1000 + s.settleDelay, deadlineAt: sched.resolutionTs * 1000 }); }
-          catch (err) { console.warn(`[tools] could not schedule resolution for market ${marketId} (the sweeper will still catch it): ${err.message}`); }
-          console.log(`[discovery] Created market ${marketId}: "${question.slice(0, 80)}"`);
-          return { ok: true, marketId, txHash, created_so_far: session.created.length, remaining_quota: Math.max(0, quota - session.created.length), terminal: session.created.length >= quota };
-        } catch (err) {
-          if (err.unconfirmed) { // broadcast but unconfirmed: never resubmit. The keeper adopts it when it lands.
-            await proposals.updateOne({ _id: insertedId }, { $set: { state: 'unconfirmed', createTxHash: err.txHash, updatedAt: new Date() } });
-            session.created.push({ question, marketId: null, txHash: err.txHash });
-            return { ok: true, pending: true, txHash: err.txHash, terminal: session.created.length >= quota };
-          }
-          session.chainFailures++;
-          await proposals.updateOne({ _id: insertedId }, { $set: { state: 'failed', error: String(err.message).slice(0, 300), updatedAt: new Date() } });
-          return { ok: false, error: `On-chain creation failed: ${err.message}`.slice(0, 400) };
-        }
+        // Save it now, as 'pending'. From here on the database owns it: the publisher puts pending questions on-chain
+        // in one transaction and keeps retrying until they land, so an RPC or gas problem never loses a good question.
+        const t0 = new Date(nowMs);
+        await database().collection('marketProposals').insertOne({ ...meta, question, resolutionCriteria: criteria, discoveryRunId: runId, state: 'pending', attempts: 0, createdAt: t0, updatedAt: t0 });
+        session.staged.push({ question, criteria, tradingTs: sched.tradingTs, resolutionTs: sched.resolutionTs, meta });
+        console.log(`[discovery] Approved and saved as pending (${session.staged.length}/${quota}): "${question.slice(0, 80)}"`);
+        const full = session.staged.length >= quota;
+        return { ok: true, staged: session.staged.length, remaining_quota: quota - session.staged.length, terminal: full, message: full ? 'Batch complete.' : 'Added to the batch. Find the next one, or call finish_discovery.' };
       },
     },
     {
@@ -254,6 +244,18 @@ function discoveryTools(deps, session, { runId, quota }) {
       async handler({ summary }) { return { ok: true, terminal: true, summary: String(summary || '').slice(0, 500) }; },
     },
   ];
+
+  const create = tools.find((t) => t.name === 'create_market');
+  const inner = create.handler;
+  create.handler = async (p) => {
+    try { return await inner(p); }
+    catch (err) {
+      session.rejected.push({ question: String((p && p.question) || '').slice(0, 200), reasons: [`unexpected error: ${err.message}`.slice(0, 300)] });
+      console.error('[discovery] create_market error:', err);
+      return { ok: false, error: String(err.message).slice(0, 300) };
+    }
+  };
+  return tools;
 }
 
 // ── Resolution tools ─────────────────────────────────────────────────────────
@@ -271,7 +273,7 @@ function resolutionTools(deps, session, ctx) {
   const eventMs = (toDate(ctx.doc.eventDate) || toDate(ctx.chain.tradingDeadline) || new Date(deps.now())).getTime();
   const afterDate = new Date(eventMs - 24 * 3600 * 1000).toISOString().slice(0, 10);
 
-  const tools = researchTools(deps, session, { afterDate });
+  const tools = researchTools(deps, session, { afterDate, budget: ctx.budget });
 
   tools.push(
     {
@@ -340,7 +342,9 @@ function resolutionTools(deps, session, ctx) {
         };
         await database().collection('evidence').replaceOne({ marketId: ctx.marketId }, evidenceDoc, { upsert: true });
 
-        const evidenceURI = buildEvidenceURI(ctx.marketId, { outcome: args.outcome, confidence, reasoning: args.reasoning, sources: evidenceDoc.sources });
+        const built = buildEvidence(ctx.marketId, { outcome: args.outcome, confidence, reasoning: args.reasoning, sources: evidenceDoc.sources });
+        const evidenceURI = built.uri;
+        await database().collection('evidence').updateOne({ marketId: ctx.marketId }, { $set: { canonicalJson: built.canonicalJson, evidenceHash: built.hash, evidenceURI } });
         let txHash;
         try { ({ txHash } = await contract.resolveMarket(ctx.marketId, args.outcome === 'YES' ? 1 : 2, evidenceURI)); }
         catch (err) {
@@ -359,16 +363,16 @@ function resolutionTools(deps, session, ctx) {
     },
     {
       name: 'cancel_market',
-      description: 'Cancel an unresolved market so every participant is refunded in full. The contract only allows this AFTER the resolution deadline. Use it when the deadline has passed and the outcome still cannot be established with confidence (or the event never happened). Before the deadline use defer_resolution instead.',
-      parameters: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] },
-      async handler({ reason }) {
+      description: 'LAST RESORT: cancel the market so every participant is refunded in full. The contract only allows this AFTER the resolution deadline, and only when the market cannot be settled: the event was cancelled or void, the outcome is neutral under the criteria, or no evidence of the result exists. Before the deadline use defer_resolution instead.',
+      parameters: { type: 'object', properties: { reason: { type: 'string' }, category: { type: 'string', enum: ['no_evidence', 'event_cancelled', 'neutral_outcome'] } }, required: ['reason', 'category'] },
+      async handler({ reason, category }) {
         const chain = await contract.getMarket(ctx.marketId);
         if (chain.state === 'Resolved' || chain.state === 'Refundable' || chain.state === 'Settled') { ctx.result = { type: 'already_final', state: chain.state }; return { ok: true, terminal: true, note: `Already ${chain.state}.` }; }
         if (deps.now() <= chain.resolutionDeadline.getTime()) return { ok: false, error: `Cannot cancel before the resolution deadline (${chain.resolutionDeadline.toISOString()}). Use defer_resolution to try again later.` };
         try {
           const { txHash } = await contract.markRefundable(ctx.marketId);
-          await database().collection('predictions').updateOne({ marketId: ctx.marketId }, { $set: { state: 'Refundable', markRefundableTxHash: txHash, cancelReason: String(reason).slice(0, 300), updatedAt: new Date() } });
-          ctx.result = { type: 'cancelled', txHash, reason };
+          await database().collection('predictions').updateOne({ marketId: ctx.marketId }, { $set: { state: 'Refundable', markRefundableTxHash: txHash, cancelReason: String(reason).slice(0, 300), cancelCategory: category || 'no_evidence', updatedAt: new Date() } });
+          ctx.result = { type: 'cancelled', txHash, reason, category: category || 'no_evidence' };
           console.log(`[resolution] Market ${ctx.marketId} cancelled / refundable (tx ${txHash})`);
           await queuePayout(deps, ctx.marketId);
           return { ok: true, terminal: true, txHash };
@@ -380,16 +384,17 @@ function resolutionTools(deps, session, ctx) {
     },
     {
       name: 'defer_resolution',
-      description: 'Not enough evidence yet (for example official results are not published). Stop for now and have the worker try again later. Say when the result is likely to be available.',
-      parameters: { type: 'object', properties: { reason: { type: 'string' }, retry_in_minutes: { type: 'number', description: '15 to 720' } }, required: ['reason'] },
-      async handler({ reason, retry_in_minutes }) {
-        const minutes = Math.min(720, Math.max(15, Number(retry_in_minutes) || 60));
-        ctx.result = { type: 'deferred', reason: String(reason || '').slice(0, 400), minutes };
+      description: 'The answer is not available yet (results not published, sources still conflicting, event postponed). Stop for now; the worker tries again later, and keeps trying until the deadline, so use this instead of giving up. Say when the result is likely to be published. If the event was definitively cancelled or void, use reason_code "event_cancelled": the market will then be refunded at the deadline.',
+      parameters: { type: 'object', properties: { reason: { type: 'string' }, reason_code: { type: 'string', enum: ['not_published_yet', 'event_postponed', 'event_cancelled', 'conflicting_sources', 'insufficient_evidence', 'other'] }, retry_in_minutes: { type: 'number', description: '15 to 240' } }, required: ['reason', 'reason_code'] },
+      async handler({ reason, reason_code, retry_in_minutes }) {
+        const minutes = Math.min(Math.floor(s.retryCap / 60000), Math.max(15, Number(retry_in_minutes) || 60));
+        ctx.result = { type: 'deferred', reason: String(reason || '').slice(0, 400), code: reason_code || 'other', minutes };
         return { ok: true, terminal: true };
       },
     },
   );
   return tools;
 }
+
 
 module.exports = { resolveDeps, defaultDeps, newSession, researchTools, discoveryTools, resolutionTools, CATEGORIES };

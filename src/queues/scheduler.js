@@ -36,6 +36,11 @@ async function scheduleRepeatJobs() {
   // (Redis may have been flushed, or the market may predate the queue).
   await keeperQueue.add('keeper-startup', {}, { removeOnComplete: true, attempts: 1 });
 
+  if (config.agent.discoveryOnStart) {
+    await discoveryQueue.add('discovery-startup', {}, { removeOnComplete: true, attempts: 1 });
+    console.log('[scheduler] AGENT_DISCOVERY_ON_START=true: discovery queued now');
+  }
+
   console.log('[scheduler] Repeating jobs registered:');
   console.log(`  discovery:  ${config.agent.discoverySchedule}`);
   console.log(`  resolution: ${config.agent.resolutionSchedule}`);

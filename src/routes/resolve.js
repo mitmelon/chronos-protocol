@@ -56,6 +56,15 @@ module.exports = async function resolveRoutes(app) {
     return reply.code(202).send({ status: 'queued', jobId, message: 'The oracle is checking the result now.' });
   });
 
+  /** Anyone can check the on-chain evidence pointer: hash the returned canonicalJson (sha256) and compare with `hash` / the on-chain URI. */
+  app.get('/api/markets/:id/evidence.json', async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id < 0) return reply.code(400).send({ error: true, message: 'Invalid market id' });
+    const ev = await db().collection('evidence').findOne({ marketId: id }, { projection: { canonicalJson: 1, evidenceHash: 1, evidenceURI: 1, submittedOnChain: 1, txHash: 1 } });
+    if (!ev || !ev.canonicalJson) return reply.code(404).send({ error: true, message: 'No evidence recorded for this market yet' });
+    return { marketId: id, uri: ev.evidenceURI, hash: ev.evidenceHash, algorithm: 'sha256', canonicalJson: ev.canonicalJson, submittedOnChain: !!ev.submittedOnChain, txHash: ev.txHash || null };
+  });
+
   /** Public status for the market page: can it be resolved, and what did the oracle last do? */
   app.get('/api/markets/:id/resolution', async (request, reply) => {
     const id = Number(request.params.id);

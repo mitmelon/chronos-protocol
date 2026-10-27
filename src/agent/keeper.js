@@ -13,6 +13,8 @@ const { v4: uuidv4 } = require('uuid');
 const { withTimeout, retry, toDate, pushCapped, acquireLock, releaseLock, failStaleRuns, finishRun, ensureAgentIndexes } = require('./lib');
 const { resolveDeps } = require('./tools');
 const guards = require('./guards');
+const { publishPending } = require('./publish');
+const { runIndexer } = require('../services/indexer');
 
 const LOCK_TTL_MS = 10 * 60 * 1000;
 const BATCH = 10;
@@ -68,7 +70,7 @@ async function runKeeper(overrides = {}) {
           run.dbSynced++;
           if (market.state === 'Open' || market.state === 'TradingClosed') await ensureJob(predictions, jobs, market, s, run);
 
-          if (market.state === 'Open') {
+          if (market.state === 'Open' && config.agent.keeperCloseTrading) {
             const deadline = toDate(market.tradingDeadline);
             if (!deadline) throw new Error(`Market ${market.marketId} has an invalid trading deadline`);
             if (Math.floor(deps.now() / 1000) >= Math.floor(deadline.getTime() / 1000) + DEADLINE_BUFFER_SECS) {
@@ -86,6 +88,20 @@ async function runKeeper(overrides = {}) {
         } catch (err) { pushCapped(run.errors, { marketId: ids[k], step: 'sync', error: err.message }); }
       }
     }
+    // Record every stake and payout from the chain (including ones made in other apps), so the dashboard has real data.
+    try {
+      const idx = await runIndexer(overrides);
+      run.indexedEvents = idx.events; run.indexedNew = idx.fresh;
+      if (idx.status === 'failed') pushCapped(run.errors, { step: 'indexer', error: (idx.errors || []).join('; ') });
+    } catch (err) { pushCapped(run.errors, { step: 'indexer', error: err.message }); }
+
+    // Approved questions still waiting to go on-chain (earlier attempt failed or was unconfirmed): retry them now.
+    try {
+      const pub = await publishPending(overrides);
+      run.pendingPublished = (pub.published || 0) + (pub.adopted || 0); run.pendingLeft = pub.pending;
+      if (pub.error) pushCapped(run.errors, { step: 'publish', error: pub.error });
+    } catch (err) { pushCapped(run.errors, { step: 'publish', error: err.message }); }
+
     // Safety net for push payouts: any settled market that is not fully paid gets a payout job (deduped per market).
     if (config.agent.autoPayout !== false) {
       const unpaid = await predictions.find({ marketId: { $ne: null }, state: { $in: ['Resolved', 'Refundable'] }, payoutStatus: { $nin: ['complete', 'stuck'] } }).sort({ updatedAt: -1 }).limit(20).toArray();
@@ -121,12 +137,18 @@ async function ensureJob(predictions, jobs, market, s, run) {
  * Write the chain's view of a market. If the market has no document yet, first look for the agent's own
  * proposal (same question) so category, authority source and event date are kept.
  */
+/** Trading is over once the deadline passes, even before anyone pays gas to flip the on-chain flag (resolveMarket does that itself). */
+function effectiveState(market) {
+  const d = toDate(market.tradingDeadline);
+  return market.state === 'Open' && d && Date.now() >= d.getTime() + DEADLINE_BUFFER_SECS * 1000 ? 'TradingClosed' : market.state;
+}
+
 async function syncMarket(predictions, proposals, market, alreadyKnown) {
   const fields = {
     marketId: market.marketId, question: market.question, resolutionCriteria: market.resolutionCriteria,
     tradingDeadline: market.tradingDeadline, resolutionDeadline: market.resolutionDeadline,
     yesPool: market.yesPool, noPool: market.noPool, totalPool: market.totalPool,
-    state: market.state, outcome: market.outcome, resolvedAt: market.resolvedAt, evidenceURI: market.evidenceURI,
+    state: effectiveState(market), chainState: market.state, outcome: market.outcome, resolvedAt: market.resolvedAt, evidenceURI: market.evidenceURI,
     swept: market.swept, creator: market.creator, feeBps: market.feeBps, updatedAt: new Date(),
   };
   let meta = {};

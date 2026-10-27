@@ -16,7 +16,7 @@ export function poolPercent(yesRaw, noRaw) {
   let yes = 0, no = 0;
   try { yes = Number(BigInt(yesRaw || '0')); no = Number(BigInt(noRaw || '0')); } catch {}
   const total = yes + no;
-  if (total === 0) return { yes: 50, no: 50 };
+  if (total === 0) return { yes: 0, no: 0, empty: true }; // nobody has staked: do not pretend it is 50/50
   const y = Math.round((yes / total) * 100);
   return { yes: y, no: 100 - y };
 }
@@ -96,6 +96,7 @@ export function outcomeTag(outcome) {
 }
 
 export function splitBar(pct, large = false) {
+  if (pct.empty) return `<div class="split split-empty${large ? ' split-lg' : ''}" role="img" aria-label="No stakes yet"><div class="split-track"></div><div class="split-labels"><span>No stakes yet</span><span></span></div></div>`;
   return `
     <div class="split${large ? ' split-lg' : ''}" role="img" aria-label="Yes ${pct.yes}%, No ${pct.no}%">
       <div class="split-track"><div class="split-yes" style="width:${pct.yes}%"></div></div>

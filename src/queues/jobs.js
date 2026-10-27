@@ -19,7 +19,13 @@ const opts = (jobId, delay) => ({ jobId, delay: Math.max(0, Math.floor(delay)), 
 /** Schedule (idempotently) the due-time resolution and the deadline cancel check for a market. */
 async function scheduleResolution(marketId, { dueAt, deadlineAt }, now = Date.now()) {
   await resolutionQueue.add(JOB, { marketId, trigger: 'scheduled' }, opts(`due-${marketId}`, dueAt - now));
-  if (deadlineAt) await resolutionQueue.add(JOB, { marketId, trigger: 'deadline' }, opts(`deadline-${marketId}`, deadlineAt + 60_000 - now));
+  if (deadlineAt) {
+    // One last, higher-effort attempt before the deadline (after the deadline the contract no longer accepts a resolution)...
+    const finalAt = deadlineAt - Number(process.env.AGENT_FINAL_ATTEMPT_LEAD_MINUTES || 90) * 60_000;
+    if (finalAt > now) await resolutionQueue.add(JOB, { marketId, trigger: 'final' }, opts(`final-${marketId}`, finalAt - now));
+    // ...and only after that, if there is still no verified answer, the refund.
+    await resolutionQueue.add(JOB, { marketId, trigger: 'deadline' }, opts(`deadline-${marketId}`, deadlineAt + 60_000 - now));
+  }
 }
 
 /** Try again later (agent deferred, or an attempt failed). Unique id so it never collides with a finished job. */

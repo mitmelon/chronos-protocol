@@ -27,10 +27,11 @@ function settings(config) {
     tradingToEvent: 1 * HOUR,
     eventToResolution: 24 * HOUR,
     maxResolutionAfterEvent: 30 * DAY,
+    maxQuestionChars: a.maxQuestionChars, maxCriteriaChars: a.maxCriteriaChars,
     minConfidence,
     minSources: a.minEvidenceSources,
     settleDelay: a.eventSettleDelayMinutes * MIN,
-    maxAttempts: a.maxResolutionAttempts,
+    retryCap: a.retryCapMinutes * MIN, finalLead: a.finalAttemptLeadMinutes * MIN,
     maxPerSweep: a.maxResolutionsPerSweep,
   };
 }
@@ -58,13 +59,13 @@ function closestQuestions(question, existing, n = 5) {
 const SCHEDULED = /\b(as scheduled|on schedule|as planned|as expected|go ahead as|take place as)\b/i;
 const SUBJECTIVE = /\b(significantly|substantially|dramatically|soon|recently|widely|many|several)\b/i;
 
-function textProblems(p, nowMs) {
+function textProblems(p, nowMs, s = { maxQuestionChars: 200, maxCriteriaChars: 500 }) {
   const out = [];
   const q = String(p.question || '').trim();
   const c = String(p.resolution_criteria || '').trim();
-  if (q.length < 25 || q.length > 300) out.push('question must be 25 to 300 characters');
+  if (q.length < 25 || q.length > s.maxQuestionChars) out.push(`question must be 25 to ${s.maxQuestionChars} characters (it is stored on-chain and every 32 bytes costs gas)`);
   if (!/^will\b/i.test(q) || !q.endsWith('?')) out.push('question must be a YES/NO question that starts with "Will" and ends with "?"');
-  if (c.length < 60 || c.length > 3000) out.push('resolution_criteria must be 60 to 3000 characters and state exactly when YES and when NO, the source, timezone and cutoff');
+  if (c.length < 60 || c.length > s.maxCriteriaChars) out.push(`resolution_criteria must be 60 to ${s.maxCriteriaChars} characters (stored on-chain, so keep it tight): state exactly when YES and when NO, the source, timezone and cutoff. Put extra detail in how_to_verify, which is stored off-chain`);
   if (SCHEDULED.test(q)) out.push('scheduled-occurrence questions ("as scheduled") are near-certain; pick a question with a genuinely uncertain outcome');
   if (SUBJECTIVE.test(q) || SUBJECTIVE.test(c)) out.push('remove subjective words (significantly, many, soon, ...) and use exact numbers or named conditions');
   const year = new Date(nowMs).getUTCFullYear();
@@ -94,6 +95,7 @@ function uncertaintyProblems(p, s) {
   const prob = Number(p.estimated_probability_yes);
   if (!Number.isFinite(prob) || prob < 0 || prob > 1) return ['estimated_probability_yes must be a number between 0 and 1'];
   if (prob < s.minProb || prob > s.maxProb) out.push(`outcome too predictable: your estimate ${Math.round(prob * 100)}% is outside the allowed ${Math.round(s.minProb * 100)}% to ${Math.round(s.maxProb * 100)}% range. Choose a more uncertain question`);
+  if (String(p.probability_basis || '').trim().length < 30) out.push('probability_basis must cite the data behind your estimate (polls, market odds, forecasts, base rates) that you found while researching');
   if (String(p.why_uncertain || '').trim().length < 40) out.push('why_uncertain must explain, with specifics, why informed people genuinely disagree on this outcome');
   return out;
 }
@@ -137,7 +139,7 @@ function evidenceProblems({ outcome, confidence, evidence, pages, authorityUrl, 
   const conf = Number(confidence);
   if (!Number.isFinite(conf) || conf < 0 || conf > 1) out.push('confidence must be between 0 and 1');
   else if (conf < s.minConfidence) out.push(`confidence ${conf} is below the required ${s.minConfidence}. If you cannot reach it, call defer_resolution`);
-  if (!Array.isArray(evidence) || evidence.length < s.minSources) return { problems: [...out, `provide at least ${s.minSources} evidence items`], sources: [] };
+  if (!Array.isArray(evidence) || evidence.length < 1) return { problems: [...out, 'provide at least one evidence item (url, verbatim quote, supports)'], sources: [] };
 
   const sources = [];
   for (const [i, ev] of evidence.entries()) {
@@ -156,7 +158,12 @@ function evidenceProblems({ outcome, confidence, evidence, pages, authorityUrl, 
   }
   const supporting = sources.filter((x) => x.supports === outcome && !x.stale);
   const hosts = new Set(supporting.map((x) => x.host));
-  if (hosts.size < s.minSources) out.push(`need ${s.minSources} independent sources (different websites) published after the event that support ${outcome}; found ${hosts.size}`);
+  // The market's resolution criteria NAME an authority source as the arbiter. A verbatim quote from that very source
+  // (published after the event) settles it on its own; anything else needs independent corroboration.
+  const authorityHost = authorityUrl ? hostnameOf(authorityUrl) : null;
+  const authorityHit = !!authorityHost && supporting.some((x) => x.host && (x.host === authorityHost || x.host.endsWith('.' + authorityHost)));
+  const need = authorityHit ? 1 : s.minSources;
+  if (hosts.size < need) out.push(`need ${s.minSources} independent sources (different websites) published after the event that support ${outcome}, or one quote from the authority source named in the market (${authorityHost || 'none recorded'}); found ${hosts.size}`);
   if (!supporting.some((x) => x.credibility === 'high' || x.credibility === 'medium')) out.push('at least one supporting source must be high or medium credibility (official or major outlet)');
   const opposite = outcome === 'YES' ? 'NO' : 'YES';
   if (sources.some((x) => x.supports === opposite && x.credibility === 'high' && !x.stale)) out.push(`a high-credibility source you cited supports ${opposite}: sources conflict, so this cannot be resolved now`);

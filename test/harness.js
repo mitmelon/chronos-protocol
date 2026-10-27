@@ -59,10 +59,20 @@ function fakeChain(clock) {
   const markets = []; const calls = { resolve: 0, refund: 0, create: 0 };
   const FINAL = ['Resolved', 'Refundable'];
   const api = {
-    markets, calls,
+    markets, calls, failCreate: null, txResults: {},
     async getMarketCount() { return markets.length; },
+    async getBlockNumber() { return 1000n; },
+    async getPositionEvents() { return []; },
     async getMarket(id) { const m = markets[id]; if (!m) throw new Error('no market ' + id); return { marketId: id, ...m, tradingDeadline: new Date(m.tradingTs * 1000), resolutionDeadline: new Date(m.resolutionTs * 1000), yesPool: '0', noPool: '0', totalPool: '0', resolvedAt: null, evidenceURI: m.evidenceURI || '', swept: false, creator: '0x0', feeBps: 500 }; },
     async createMarket(question, resolutionCriteria, tradingTs, resolutionTs) { calls.create++; markets.push({ question, resolutionCriteria, tradingTs, resolutionTs, state: 'Open', outcome: 'UNRESOLVED' }); return { txHash: '0xcreate' + markets.length, marketId: markets.length - 1 }; },
+    async createMarkets(items) {
+      calls.createBatch = (calls.createBatch || 0) + 1;
+      if (api.failCreate) throw api.failCreate();
+      const ids = [];
+      for (const it of items) { markets.push({ question: it.question, resolutionCriteria: it.criteria, tradingTs: it.tradingTs, resolutionTs: it.resolutionTs, state: 'Open', outcome: 'UNRESOLVED' }); ids.push(markets.length - 1); }
+      return { txHash: '0xbatch' + calls.createBatch, marketIds: ids, blockNumber: 100 + calls.createBatch };
+    },
+    async getCreateMarketsResult(tx) { return api.txResults[tx] || { status: 'pending' }; },
     async closeTrading(id) { markets[id].state = 'TradingClosed'; return { txHash: '0xclose' }; },
     async resolveMarket(id, outcome, uri) { const m = markets[id]; if (FINAL.includes(m.state)) throw Object.assign(new Error('would revert (InvalidMarketState)'), { errorName: 'InvalidMarketState' }); calls.resolve++; m.state = 'Resolved'; m.outcome = outcome === 1 ? 'YES' : 'NO'; m.evidenceURI = uri; return { txHash: '0xresolve' + calls.resolve }; },
     async markRefundable(id) { const m = markets[id]; if (FINAL.includes(m.state)) throw Object.assign(new Error('InvalidMarketState'), { errorName: 'InvalidMarketState' }); if (clock.t <= m.resolutionTs * 1000) throw Object.assign(new Error('InvalidDeadline'), { errorName: 'InvalidDeadline' }); calls.refund++; m.state = 'Refundable'; return { txHash: '0xrefund' }; },
@@ -71,12 +81,14 @@ function fakeChain(clock) {
 }
 
 const fc = (name, args) => ({ functionCall: { name, args } });
+const api_systems = [];
 function fakeGemini(script) {
   const queue = [...script]; const log = [];
   return {
     log,
     models: {
       async generateContent({ contents, config }) {
+        api_systems.push(String((config && config.systemInstruction) || ''));
         const step = queue.shift();
         if (!step) throw new Error('fake Gemini script exhausted');
         const parts = Array.isArray(step) ? step : [{ text: step }];
@@ -87,4 +99,4 @@ function fakeGemini(script) {
   };
 }
 
-module.exports = { fakeDb, fakeChain, fakeGemini, fc };
+module.exports = { fakeDb, fakeChain, fakeGemini, fc, systems: api_systems };

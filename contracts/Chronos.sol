@@ -108,6 +108,8 @@ contract Chronos is Ownable2Step, Pausable, ReentrancyGuard {
 
     /// @notice Upper bound for claimBatch so a single transaction always fits in a block.
     uint256 public constant MAX_BATCH = 100;
+    /// @notice Upper bound for createMarkets.
+    uint256 public constant MAX_CREATE_BATCH = 10;
 
     uint256 public marketCount;
     mapping(uint256 => Market) public markets;
@@ -153,12 +155,43 @@ contract Chronos is Ownable2Step, Pausable, ReentrancyGuard {
         gracePeriod = _gracePeriod;
     }
 
+    /// @notice Create one market.
     function createMarket(
         string calldata question,
         string calldata resolutionCriteria,
         uint64 tradingDeadline,
         uint64 resolutionDeadline
     ) external whenNotPaused returns (uint256 marketId) {
+        marketId = _createMarket(question, resolutionCriteria, tradingDeadline, resolutionDeadline);
+    }
+
+    /// @notice Create several markets in ONE transaction (saves the per-transaction overhead and lets the agent
+    /// publish a whole day's markets at once). All-or-nothing: if any entry is invalid the whole call reverts.
+    /// Ids are sequential starting at the returned `firstMarketId`.
+    function createMarkets(
+        string[] calldata questions,
+        string[] calldata resolutionCriteria,
+        uint64[] calldata tradingDeadlines,
+        uint64[] calldata resolutionDeadlines
+    ) external whenNotPaused returns (uint256 firstMarketId) {
+        uint256 n = questions.length;
+        if (
+            n == 0 || n > MAX_CREATE_BATCH || resolutionCriteria.length != n || tradingDeadlines.length != n
+                || resolutionDeadlines.length != n
+        ) revert InvalidBatch();
+
+        firstMarketId = marketCount;
+        for (uint256 i = 0; i < n; ++i) {
+            _createMarket(questions[i], resolutionCriteria[i], tradingDeadlines[i], resolutionDeadlines[i]);
+        }
+    }
+
+    function _createMarket(
+        string calldata question,
+        string calldata resolutionCriteria,
+        uint64 tradingDeadline,
+        uint64 resolutionDeadline
+    ) internal returns (uint256 marketId) {
         uint256 qLen = bytes(question).length;
         uint256 cLen = bytes(resolutionCriteria).length;
 

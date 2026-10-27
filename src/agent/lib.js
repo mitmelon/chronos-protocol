@@ -22,8 +22,18 @@ function withTimeout(work, ms, label = 'operation') {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** Retry with exponential backoff and jitter. */
-async function retry(fn, { tries = 3, baseMs = 1000, label = 'call', shouldRetry = () => true } = {}) {
+/** One short line from an error, even when the SDK stuffs a whole JSON body into err.message. */
+function shortMessage(err, max = 160) {
+  const raw = String((err && err.message) || err || '');
+  const m = raw.match(/"message"\s*:\s*"([^"]+)"/);
+  return (m ? m[1] : raw).replace(/\s+/g, ' ').slice(0, max);
+}
+
+/**
+ * Retry with exponential backoff and jitter. `delayFor(err, attempt)` may return a delay in ms to override the default,
+ * for example the "retry in 44s" a rate-limited API asks for (retrying sooner only burns attempts).
+ */
+async function retry(fn, { tries = 3, baseMs = 1000, label = 'call', shouldRetry = () => true, delayFor } = {}) {
   let lastErr;
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
@@ -31,8 +41,8 @@ async function retry(fn, { tries = 3, baseMs = 1000, label = 'call', shouldRetry
     } catch (err) {
       lastErr = err;
       if (attempt === tries || !shouldRetry(err)) break;
-      const delay = baseMs * 2 ** (attempt - 1) + Math.floor(Math.random() * 250);
-      console.warn(`[retry] ${label} failed (attempt ${attempt}/${tries}): ${err.message}. Retrying in ${delay}ms`);
+      const delay = (delayFor && delayFor(err, attempt)) || baseMs * 2 ** (attempt - 1) + Math.floor(Math.random() * 250);
+      console.warn(`[retry] ${label} failed (attempt ${attempt}/${tries}): ${shortMessage(err)}. Retrying in ${Math.round(delay / 1000)}s`);
       await sleep(delay);
     }
   }
@@ -109,10 +119,12 @@ async function ensureAgentIndexes(database) {
   _indexesEnsured = true;
   const tryIndex = async (coll, spec, opts = {}) => {
     try { await database.collection(coll).createIndex(spec, { background: true, ...opts }); }
-    catch (err) { console.warn(`[indexes] ${coll} ${JSON.stringify(spec)}: ${err.message}`); }
+    catch (err) {
+      if (err.code === 85 || err.code === 86) return; // an equivalent index already exists under another name/options: fine
+      console.warn(`[indexes] ${coll} ${JSON.stringify(spec)}: ${err.message}`);
+    }
   };
   await tryIndex('predictions', { state: 1, resolutionDeadline: 1 });
-  await tryIndex('predictions', { marketId: 1 });
   await tryIndex('predictions', { discoveryRunId: 1, createdAt: -1 });
   await tryIndex('predictions', { 'source.eventUrl': 1 }, { unique: true, partialFilterExpression: { 'source.eventUrl': { $type: 'string' } } });
   await tryIndex('resolutionJobs', { marketId: 1, createdAt: -1 });
@@ -120,4 +132,4 @@ async function ensureAgentIndexes(database) {
   await tryIndex('agentRuns', { type: 1, startedAt: -1 });
 }
 
-module.exports = { sleep, withTimeout, retry, toDate, pushCapped, acquireLock, releaseLock, failStaleRuns, finishRun, ensureAgentIndexes };
+module.exports = { shortMessage, sleep, withTimeout, retry, toDate, pushCapped, acquireLock, releaseLock, failStaleRuns, finishRun, ensureAgentIndexes };

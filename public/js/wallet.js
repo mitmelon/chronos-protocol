@@ -35,7 +35,11 @@ class ChronosWallet {
   async _init() {
     window.addEventListener('eip6963:announceProvider', (e) => {
       const { info, provider } = e.detail || {};
-      if (info && provider && !this.providers.has(info.uuid)) { this.providers.set(info.uuid, { info, provider }); this._emit('providers'); }
+      if (info && provider && !this.providers.has(info.uuid)) {
+        this.providers.set(info.uuid, { info, provider }); this._emit('providers');
+        let saved; try { saved = localStorage.getItem(STORE_KEY); } catch { /* ignore */ }
+        if (!this.account && saved === info.uuid) this._restoreFrom(info.uuid); // the wallet announced after we looked: reconnect now
+      }
     });
     window.dispatchEvent(new Event('eip6963:requestProvider'));
     await Promise.all([this._loadChain(), new Promise((r) => setTimeout(r, 250))]); // give wallets a moment to announce
@@ -88,16 +92,29 @@ class ChronosWallet {
 
   _forget() { try { localStorage.removeItem(STORE_KEY); } catch { /* ignore */ } }
 
-  /** Silently reconnect to the wallet used last time (no popup). */
-  async _restore() {
-    let uuid; try { uuid = localStorage.getItem(STORE_KEY); } catch { /* ignore */ }
-    if (!uuid || !this.providers.has(uuid)) return;
+  /** Reconnect to one wallet WITHOUT a popup: eth_accounts only returns accounts this site was already allowed to see. */
+  async _restoreFrom(uuid) {
     try {
       this._attach(uuid);
       const accs = await this.provider.request({ method: 'eth_accounts' });
-      if (accs && accs[0]) { this.account = accs[0]; this.chainId = parseInt(await this.provider.request({ method: 'eth_chainId' }), 16); }
-      else this._forget();
-    } catch { this._forget(); }
+      if (accs && accs[0]) {
+        this.account = accs[0];
+        this.chainId = parseInt(await this.provider.request({ method: 'eth_chainId' }), 16);
+        try { localStorage.setItem(STORE_KEY, uuid); } catch { /* ignore */ }
+        this._emit('account');
+        return true;
+      }
+    } catch { /* fall through */ }
+    return false;
+  }
+
+  /** On page load: reconnect to the last wallet, else to any wallet that already trusts this site. */
+  async _restore() {
+    if (this.account) return;
+    let saved; try { saved = localStorage.getItem(STORE_KEY); } catch { /* ignore */ }
+    if (saved && this.providers.has(saved) && (await this._restoreFrom(saved))) return;
+    for (const uuid of this.providers.keys()) { if (uuid !== saved && (await this._restoreFrom(uuid))) return; }
+    if (saved && !this.providers.has(saved)) setTimeout(() => { if (!this.account) this._restore(); }, 1500); // provider may still be loading
   }
 
   /** Connect with a specific wallet (by EIP-6963 uuid). Pass nothing to use the only/first one. */

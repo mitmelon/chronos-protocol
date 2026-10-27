@@ -16,7 +16,7 @@
 
 const { GoogleGenAI, FunctionCallingConfigMode } = require('@google/genai');
 const config = require('../config');
-const { withTimeout, retry } = require('../agent/lib');
+const { withTimeout, retry, sleep } = require('../agent/lib');
 
 let _client = null;
 function getClient() {
@@ -35,6 +35,41 @@ function isTransient(err) {
   return /fetch failed|timed out|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|overloaded|UNAVAILABLE/i.test(err.message || '');
 }
 
+/** Delay a rate-limited API asks for ("Please retry in 44.2s" or RetryInfo "44s"), in ms; null if none. */
+function retryAfterMs(err) {
+  const m = String((err && err.message) || '');
+  const hit = m.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/) || m.match(/retry in (\d+(?:\.\d+)?)\s*s/i);
+  return hit ? Math.min(90000, Math.ceil(Number(hit[1]) * 1000) + 1000) : null;
+}
+
+// Spread requests evenly so the agent stays under the per-minute quota instead of hitting it and retrying.
+let _nextSlot = 0;
+async function throttle() {
+  const gap = 60000 / Math.max(1, config.gemini.maxRpm || 10);
+  const now = Date.now();
+  const start = Math.max(now, _nextSlot);
+  _nextSlot = start + gap;
+  if (start > now) await sleep(start - now);
+}
+
+/**
+ * Every model call re-sends the whole conversation, so old search results (the biggest items) are shrunk to
+ * url/title/date once they are more than `keepTurns` turns old. Page reads are kept whole: the agent needs the exact text to quote.
+ */
+function compactHistory(contents, keepTurns = 2) {
+  const userTurns = contents.map((c, i) => (c.role === 'user' && c.parts?.some((p) => p.functionResponse) ? i : -1)).filter((i) => i >= 0);
+  const stale = new Set(userTurns.slice(0, Math.max(0, userTurns.length - keepTurns)));
+  return contents.map((c, i) => {
+    if (!stale.has(i)) return c;
+    return { ...c, parts: c.parts.map((p) => {
+      const fr = p.functionResponse;
+      if (!fr || fr.name !== 'web_search' || !fr.response?.output?.results) return p;
+      const o = fr.response.output;
+      return { functionResponse: { ...fr, response: { output: { ok: o.ok, count: o.count, results: o.results.map(({ url, title, published }) => ({ url, title, published })) } } } };
+    }) };
+  });
+}
+
 function textOf(response) {
   const parts = response?.candidates?.[0]?.content?.parts || [];
   return parts.filter((p) => typeof p.text === 'string' && !p.thought).map((p) => p.text).join('').trim();
@@ -49,8 +84,8 @@ async function callModel({ model, contents, system, tools, temperature, json, sc
   if (json) { cfg.responseMimeType = 'application/json'; if (schema) cfg.responseJsonSchema = schema; }
 
   const response = await retry(
-    () => withTimeout(getClient().models.generateContent({ model, contents, config: cfg }), 120000, 'Gemini generateContent'),
-    { tries: 4, baseMs: 2500, label: `gemini:${model}`, shouldRetry: isTransient }
+    async () => { await throttle(); return withTimeout(getClient().models.generateContent({ model, contents, config: cfg }), 120000, 'Gemini generateContent'); },
+    { tries: 4, baseMs: 2500, label: `gemini:${model}`, shouldRetry: isTransient, delayFor: retryAfterMs }
   );
   if (response.promptFeedback?.blockReason) throw new Error(`Gemini blocked the prompt: ${response.promptFeedback.blockReason}`);
   const cand = response.candidates?.[0];
@@ -92,7 +127,7 @@ async function runAgent({ system, goal, tools, model = config.gemini.model, maxS
 
   while (steps < maxSteps) {
     steps++;
-    const response = await callModel({ model, system, contents, tools, temperature });
+    const response = await callModel({ model, system, contents: compactHistory(contents), tools, temperature });
     contents.push(response.candidates[0].content); // unchanged: keeps thought signatures
 
     const calls = response.functionCalls || [];
@@ -134,4 +169,4 @@ async function runAgent({ system, goal, tools, model = config.gemini.model, maxS
   return { finished: false, text: '', steps, trace, stopReason: 'max_steps' };
 }
 
-module.exports = { runAgent, generateJson, getClient, setClientForTests, isTransient, textOf };
+module.exports = { runAgent, generateJson, getClient, setClientForTests, isTransient, textOf, _internal: { retryAfterMs, compactHistory, throttle } };

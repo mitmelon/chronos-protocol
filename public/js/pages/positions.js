@@ -1,9 +1,10 @@
 // ─── My positions ────────────────────────────────────────────────────────────
 import { api } from '../api.js';
 import { wallet } from '../wallet.js';
-import { esc, shortAddr, formatUsdc, statusPill, outcomeTag, emptyState, buildPagination } from '../utils.js';
+import { esc, shortAddr, formatUsdc, statusPill, outcomeTag, emptyState, buildPagination, explorerTxUrl } from '../utils.js';
 import { icon, onWallet, wireClaimButtons } from '../ui.js';
 import { connectWallet } from '../login.js';
+import { getTrades } from '../api2.js';
 
 export async function renderPositions(view) {
   onWallet(view, () => renderPositions(view));
@@ -27,11 +28,16 @@ export async function renderPositions(view) {
     <div class="page">
       <div class="page-head"><div><h1>My positions</h1><p class="mono" style="font-size:13px">${esc(shortAddr(wallet.account))}</p></div></div>
       <div class="stack">
+        <div class="metrics" id="sum">${[0, 1, 2, 3].map(() => '<div class="metric"><div class="skeleton" style="height:14px;width:80px"></div><div class="skeleton" style="height:28px;width:60px;margin-top:10px"></div></div>').join('')}</div>
         <div id="claims" hidden></div>
         <section class="card">
           <div class="card-head"><h2 class="section-title">All positions</h2></div>
           <div class="table-wrap" id="table-wrap"><div style="padding:16px 20px"><div class="skeleton" style="height:44px"></div></div></div>
           <div class="pager" id="pager" hidden></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2 class="section-title">Trade history</h2></div>
+          <div class="table-wrap" id="trades"><div style="padding:16px 20px"><div class="skeleton" style="height:44px"></div></div></div>
         </section>
       </div>
     </div>`;
@@ -58,6 +64,30 @@ export async function renderPositions(view) {
     wireClaimButtons(sec);
   }).catch(() => {});
 
+  const drawSummary = (m) => {
+    $('#sum').innerHTML = `
+      <div class="metric"><div class="k">Total staked</div><div class="v">${formatUsdc(m.totalStaked)} <small>USDC</small></div><div class="n">${m.positions} position${m.positions === 1 ? '' : 's'} in ${m.markets} market${m.markets === 1 ? '' : 's'}</div></div>
+      <div class="metric"><div class="k">Still in play</div><div class="v">${formatUsdc(m.openStaked)} <small>USDC</small></div><div class="n">In unsettled markets</div></div>
+      <div class="metric"><div class="k">Paid to you</div><div class="v">${formatUsdc(m.paidOut)} <small>USDC</small></div><div class="n">${BigInt(m.refunded || '0') > 0n ? `Plus ${formatUsdc(m.refunded)} refunded` : 'Winnings received'}</div></div>
+      <div class="metric"><div class="k">Awaiting payout</div><div class="v">${m.unclaimed}</div><div class="n">Settled positions not yet paid</div></div>`;
+  };
+
+  async function loadTrades() {
+    const box = $('#trades');
+    try {
+      const { trades = [] } = await getTrades(account, 1, 25);
+      if (!trades.length) { box.innerHTML = emptyState('No trades yet', 'Your stakes and payouts will be listed here with their position IDs.'); return; }
+      const when = (d) => (d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—');
+      box.innerHTML = `<table class="table"><thead><tr><th>Position ID</th><th>Market</th><th>Type</th><th class="r">Amount</th><th>When</th><th>Transaction</th></tr></thead><tbody>${trades.map((t) => `
+        <tr data-id="${esc(t.marketId)}"><td class="mono">${esc(t.positionId || '—')}</td>
+        <td><a class="cell-title" href="#market/${esc(t.marketId)}" style="display:block">${esc(t.question || 'Market #' + t.marketId)}</a></td>
+        <td>${t.type === 'buy' ? `<span class="tag ${t.outcome === 1 ? 'tag-yes' : 'tag-no'}">Staked ${t.outcome === 1 ? 'Yes' : 'No'}</span>` : t.type === 'winnings' ? '<span class="tag">Winnings paid</span>' : '<span class="tag tag-outline">Refund</span>'}</td>
+        <td class="r num">${formatUsdc(t.amount)} USDC</td><td class="num" style="color:var(--muted)">${when(t.createdAt)}</td>
+        <td class="mono">${explorerTxUrl(t.txHash) ? `<a href="${esc(explorerTxUrl(t.txHash))}" target="_blank" rel="noopener" style="text-decoration:underline">${esc(t.txHash.slice(0, 8))}…</a>` : esc(t.txHash.slice(0, 10))}</td></tr>`).join('')}</tbody></table>`;
+    } catch (err) { box.innerHTML = emptyState('Could not load trades', err.message); }
+  }
+  loadTrades();
+
   let page = 1;
   const limit = 20;
   const wrap = $('#table-wrap');
@@ -70,7 +100,8 @@ export async function renderPositions(view) {
   async function load() {
     wrap.classList.add('loading');
     try {
-      const { positions = [], total = 0 } = await api.positions(account, { page, limit });
+      const { positions = [], total = 0, summary = null } = await api.positions(account, { page, limit });
+      if (summary) drawSummary(summary);
       if (!view.isConnected) return;
       if (!positions.length) {
         wrap.innerHTML = emptyState('No positions yet', 'Browse markets and place your first prediction.', '<a class="btn btn-primary btn-sm" href="#markets">Explore markets</a>');
