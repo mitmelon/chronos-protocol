@@ -28,7 +28,7 @@ const ARC_PRESETS = {
   },
 };
 
-const networkKey = optional('ARC_NETWORK', 'testnet').toLowerCase();
+const networkKey = "mainnet";
 if (!ARC_PRESETS[networkKey]) throw new Error(`ARC_NETWORK must be "testnet" or "mainnet" (got "${networkKey}")`);
 const preset = ARC_PRESETS[networkKey];
 

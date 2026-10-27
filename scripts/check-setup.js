@@ -5,7 +5,7 @@
  * Never prints secrets. Exit code 1 if anything blocking is wrong.
  */
 require('dotenv').config();
-const { formatUnits } = require('viem');
+const { formatUnits, parseAbi } = require('viem');
 const { privateKeyToAccount } = require('viem/accounts');
 const config = require('../src/config');
 
@@ -59,6 +59,18 @@ const bad = (m) => { blocking++; console.log(`  [FAIL] ${m}`); };
             ? ok('Your wallet is the contract\'s oracle (it can resolve markets)')
             : warn(`The contract's oracle is ${s.oracle}, not your wallet. Creating markets works, but RESOLVING will fail until they match`);
         }
+        // The token the contract was DEPLOYED with must be the real USDC of this network, or staked funds would be stuck.
+        try {
+          const erc20 = parseAbi(['function usdc() view returns (address)', 'function decimals() view returns (uint8)', 'function symbol() view returns (string)']);
+          const tokenInContract = await client.readContract({ address: config.arc.factoryAddress, abi: erc20, functionName: 'usdc' });
+          if (tokenInContract.toLowerCase() !== config.arc.usdcAddress.toLowerCase()) bad(`The contract uses token ${tokenInContract} but this network's USDC is configured as ${config.arc.usdcAddress}. Check VITE_ARC_USDC_ADDRESS against Arc's official docs BEFORE anyone stakes`);
+          else {
+            const [dec, sym] = await Promise.all([client.readContract({ address: tokenInContract, abi: erc20, functionName: 'decimals' }), client.readContract({ address: tokenInContract, abi: erc20, functionName: 'symbol' })]);
+            dec === 6 && sym === 'USDC' ? ok(`Contract token is ${sym} with ${dec} decimals (${tokenInContract})`) : bad(`The contract token reports symbol "${sym}" and ${dec} decimals: expected USDC with 6`);
+          }
+        } catch (e) { warn(`Could not verify the contract's USDC token (${e.message})`); }
+        s.treasury && ok(`Fees go to treasury ${s.treasury}`);
+        config.arc.isMainnet && s.owner.toLowerCase() === (account ? account.address.toLowerCase() : '') && warn('The OWNER and the oracle are the same wallet. On mainnet use a separate, safer owner (ideally a multisig); the oracle key stays on the server.');
         let hasBatch = true;
         try { await contract.getPublicClient().readContract({ address: config.arc.factoryAddress, abi: contract.CHRONOS_ABI, functionName: 'MAX_BATCH' }); } catch { hasBatch = false; }
         hasBatch ? ok('Contract supports automatic payouts (claimBatch)') : warn('Contract is the OLD version without claimBatch: set AGENT_AUTO_PAYOUT=false or redeploy contracts/Chronos.sol');

@@ -9,7 +9,7 @@
 ![USDC](https://img.shields.io/badge/settled%20in-USDC-2775ca?style=for-the-badge)
 ![AI](https://img.shields.io/badge/oracle-Gemini%20%2B%20Parallel-8e44ad?style=for-the-badge)
 ![Solidity](https://img.shields.io/badge/contract-Solidity%200.8-363636?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-testnet%20first-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-mainnet%20first-orange?style=for-the-badge)
 
 [How it works](#-how-it-works) · [Why Arc](#-why-arc) · [Quick start](#-quick-start) · [The agent](#-the-agent) · [Costs](#-gas-and-costs) · [Trust model](#-trust-model--risks)
 
